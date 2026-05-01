@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "healthai-audit"
+version = "0.1.0"
+description = "Local-first AI governance and vendor-risk auditor for small healthcare practices."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Healthcare AI Security Lab" }
+]
+license = { text = "MIT" }
+classifiers = [
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Security",
+  "Topic :: Office/Business"
+]
+dependencies = []
+
+[project.scripts]
+healthai-audit = "healthai_audit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
