@@ -15,6 +15,21 @@ It reads a simple AI-tool inventory and produces:
 
 The project is designed for independent practices, specialty clinics, therapy groups, dental offices, community clinics, MSPs, compliance consultants, and healthcare operators that need a practical AI governance workflow without sending sensitive operational data to a SaaS platform.
 
+## Velari Suite Navigation
+
+These repos are the public navigation layer for the Velari Small Practice Security Suite. They are local-first, PHI-avoidant evidence tools for small healthcare practices and MSPs; each repo has its own scope and safety boundaries.
+
+| Repo | Role |
+|---|---|
+| [Small Practice Security Kit](https://github.com/itsnmills/small-practice-security-kit) | Flagship no-PHI readiness packet and owner/MSP handoff. |
+| [Cloud/IAM Access Review Analyzer](https://github.com/itsnmills/cloud-iam-access-review-analyzer) | Google Workspace, Microsoft 365, and AWS IAM export review packets. |
+| [HealthAI Governance Auditor](https://github.com/itsnmills/health-ai-governance-auditor) | AI tool inventory, vendor questions, and PHI-handling review prompts. |
+| [Strands PHI Guardrails Demo](https://github.com/itsnmills/Strands-PHI-Guardrails-Demo) | Deterministic RBAC, purpose-of-use, BAA-status, and PHI-pattern guardrail examples. |
+| [Security Operations Triage Pipeline](https://github.com/itsnmills/security-operations-triage-pipeline) | Scanner/alert exports into owner-ready tickets and handoff packets. |
+| [Policy-to-Evidence Graph](https://github.com/itsnmills/policy-to-evidence-graph) | Local control-to-evidence map, freshness checks, and review packet exports. |
+
+Use these for evidence organization and review preparation. They do not provide legal advice, certify compliance, complete a formal Security Risk Analysis, or make breach-notification decisions.
+
 ## What It Is Not
 
 HealthAI Audit does not provide legal advice, clinical advice, HIPAA certification, FDA classification, penetration testing, or a formal security risk analysis opinion. It is a structured local workbench for evidence collection and review.

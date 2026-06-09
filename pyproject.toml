@@ -9,7 +9,7 @@ description = "Local-first AI governance and vendor-risk auditor for small healt
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-  { name = "Healthcare AI Security Lab" }
+  { name = "Noah Mills" }
 ]
 license = { text = "MIT" }
 classifiers = [
