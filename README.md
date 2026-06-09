@@ -10,6 +10,10 @@ use it for AI vendor inventory, BAA/PHI handling, RAG, prompt-injection,
 agent-permission, and clinical-safety review inputs that can roll into a
 broader practice-readiness packet.
 
+## Work with Velari
+
+Use this auditor when a practice, MSP, compliance consultant, or healthcare operator needs a no-PHI AI inventory and vendor-risk review before approving ambient scribes, AI billing tools, RAG assistants, scheduling assistants, or agentic workflows. For a no-PHI readiness discussion, start from [Noah Mills on GitHub](https://github.com/itsnmills) or open a public-safe GitHub issue. Do not include PHI, credentials, private URLs, contracts, logs, patient details, or incident details.
+
 It reads a simple AI-tool inventory and produces:
 
 - AI vendor risk cards
@@ -20,6 +24,8 @@ It reads a simple AI-tool inventory and produces:
 - prioritized remediation actions
 - Markdown, JSON, and CSV reports
 - a starter AI use policy and vendor questionnaire
+
+See the buyer-facing sample output shape in [`docs/sample-output.md`](docs/sample-output.md).
 
 The project is designed for independent practices, specialty clinics, therapy groups, dental offices, community clinics, MSPs, compliance consultants, and healthcare operators that need a practical AI governance workflow without sending sensitive operational data to a SaaS platform.
 
