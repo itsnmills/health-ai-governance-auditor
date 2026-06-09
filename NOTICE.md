@@ -1,6 +1,6 @@
 # NOTICE / Attribution
 
-HealthAI Audit is an original open-source project by Healthcare AI Security Lab.
+HealthAI Audit is an original open-source project by Noah Mills for the Velari small-practice security workflow family.
 
 It turns local AI-tool inventory data into a deterministic governance and vendor-risk report for healthcare practices. It does not certify HIPAA compliance, FDA status, clinical safety, or legal sufficiency.
 
