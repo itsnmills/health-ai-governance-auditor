@@ -4,9 +4,11 @@
 
 HealthAI Audit is a local-first command line auditor for small and medium healthcare practices adopting AI tools.
 
-This is a Velari companion module for the public
-[Small Practice Security Kit](https://github.com/itsnmills/small-practice-security-kit):
-use it for AI vendor inventory, BAA/PHI handling, RAG, prompt-injection,
+## Part of the Velari Healthcare Security Suite
+
+This repo is the AI governance and vendor-risk companion for the public
+[Small Practice Security Kit](https://github.com/itsnmills/small-practice-security-kit).
+Use it for AI vendor inventory, BAA/PHI handling, RAG, prompt-injection,
 agent-permission, and clinical-safety review inputs that can roll into a
 broader practice-readiness packet.
 
