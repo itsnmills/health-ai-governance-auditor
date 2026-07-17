@@ -21,11 +21,14 @@ It reads a simple AI-tool inventory and produces:
 - AI vendor risk cards
 - HIPAA/BAA and PHI handling gaps
 - RAG, prompt-injection, and agent/tool-permission findings
+- **MCP / tool-broker, autonomous-mode, and network-egress checks** (v0.1.1)
 - clinical safety and clinician-review gaps
 - non-human identity and AI supply-chain questions
 - prioritized remediation actions
 - Markdown, JSON, and CSV reports
 - a starter AI use policy and vendor questionnaire
+
+**Current public release:** [`docs/releases/v0.1.1.md`](docs/releases/v0.1.1.md) (2026-07-16)
 
 See the buyer-facing sample output shape in [`docs/sample-output.md`](docs/sample-output.md).
 

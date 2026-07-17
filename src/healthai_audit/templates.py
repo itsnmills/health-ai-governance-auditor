@@ -29,6 +29,9 @@ def inventory_template() -> str:
                     "source_attribution": False,
                     "prompt_injection_testing": "unknown",
                     "agent_tools": [],
+                    "mcp_servers": [],
+                    "autonomous_mode": "unknown",
+                    "network_egress": "unknown",
                     "tool_scope": "unknown",
                     "human_approval": "unknown",
                     "audit_logging": "unknown",
@@ -78,6 +81,15 @@ def questionnaire_template() -> str:
 - What PHI or sensitive data does the system access, store, transmit, infer, or log?
 - Is customer data used for training, fine-tuning, evaluation, analytics, or product improvement?
 - Can the practice opt out of model improvement data use?
+
+## Agents, MCP, and automation
+
+- Which agent tools, MCP servers, or tool brokers can the product call?
+- Can the agent act autonomously, or is human approval required per action class?
+- Can the practice allowlist, disable, or scope tools and MCP servers?
+- What network egress is allowed (email, SMS, browser, webhooks, arbitrary HTTP)?
+- Are tool calls, destinations, and approval decisions logged for review?
+
 - Are retention, deletion, and export guarantees contractually defined?
 - Which subprocessors can access customer data?
 - Is a BAA signed before PHI is used?

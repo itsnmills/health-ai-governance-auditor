@@ -8,30 +8,31 @@ Fictional practice: Family Dental Clinic
 
 Review question: Which AI tools can be approved, which need vendor follow-up, and which should stay blocked until evidence exists?
 
-Summary:
+Summary (v0.1.1 sample shape):
 
-- 4 AI tools inventoried.
-- 2 tools touch PHI and require confirmed BAA status before approval.
-- 1 tool uses retrieval or uploaded documents and needs permission-sync evidence.
-- 1 tool has agent-style actions and needs human approval gates.
-- 3 vendor follow-up questions should be sent before owner signoff.
+- 4 AI tools inventoried (including one MCP scheduling agent).
+- 2+ tools touch PHI and require confirmed BAA status before approval.
+- 1+ tools use retrieval or uploaded documents and need permission-sync evidence.
+- Agent-style actions, MCP servers, autonomous mode, and network egress are scored explicitly.
+- Owner/MSP follow-up should cover training, BAA, approval gates, and MCP allowlists before signoff.
 
 ## Example Risk Cards
 
 | Tool | Workflow | Current Decision | Main Evidence Gap | Owner/MSP Action |
 |---|---|---|---|---|
 | Ambient Scribe | Clinical documentation | Conditionally approvable | Confirm BAA, retention, and clinician-review workflow | Collect vendor BAA and sample audit-log export |
-| Billing Assistant | Claims and denial drafting | Needs review | Customer-data training and export-retention terms unclear | Ask vendor for training, retention, and subcontractor language |
-| Scheduling Chatbot | Appointment scheduling | Limited approval | PHI boundary and escalation workflow unclear | Restrict intake content and document escalation path |
-| Internal Policy Assistant | Staff policy lookup | Low risk if local-only | Permission-sync and source freshness evidence missing | Record source list and refresh cadence |
+| Claims Appeal Drafting Bot | Billing appeals | Block / Critical | Missing BAA, training on customer data, unrestricted email agent | Pause PHI use; require BAA + human approval + logging |
+| Clinic Policy RAG Assistant | Staff policy lookup | Needs review | Permission-sync and evaluation coverage partial | Finish source list, refresh cadence, injection tests |
+| Front Desk MCP Scheduling Agent | Scheduling with MCP tools | Block / Critical | Autonomous mode + MCP + SMS/browser with no approval gates | Disable autonomous mode; allowlist MCP servers; require human-in-loop |
 
 ## Example Remediation Queue
 
 1. Confirm BAA status for any AI tool that can receive PHI.
 2. Document whether customer data is used for model training.
 3. Require clinician review for documentation, triage, prescribing, or care-plan workflows.
-4. Require approval gates before any AI agent can email, update records, create tickets, or contact a vendor.
-5. Keep a simple AI inventory with owner, workflow, data types, vendor, BAA status, retention, and audit logging.
+4. Require approval gates before any AI agent can email, update records, create tickets, send SMS, or contact a vendor.
+5. Inventory MCP/tool-broker servers, allowlist only required ones, and disable unsupervised autonomous mode for PHI or high-impact tools.
+6. Keep a simple AI inventory with owner, workflow, data types, vendor, BAA status, retention, agent tools, MCP servers, and audit logging.
 
 ## Reviewer-Safe Output
 

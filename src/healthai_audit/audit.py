@@ -67,7 +67,7 @@ def audit_inventory(inventory: dict[str, Any]) -> dict[str, Any]:
             "review_owner": str(inventory.get("review_owner", "")),
             "review_date": str(inventory.get("review_date", "")),
             "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "method": "HealthAI Audit deterministic scoring v0.1.0",
+            "method": "HealthAI Audit deterministic scoring v0.1.1",
             "disclaimer": "Triage support only; not legal, clinical, HIPAA, FDA, or security certification advice.",
         },
         "summary": {
@@ -197,22 +197,67 @@ def score_model_rag_security(tool: dict[str, Any]) -> DomainResult:
     return domain("Model and RAG security", score, evidence, gaps, actions, ["OWASP LLM01", "OWASP LLM08", "NIST AI RMF Measure"])
 
 
+# High-impact agent/tool surfaces for small-practice AI review.
+# Includes classic tool actions plus MCP/tool-broker and egress-capable actions.
+HIGH_IMPACT_AGENT_TOOLS = {
+    "ehr",
+    "fhir",
+    "email",
+    "shell",
+    "browser",
+    "files",
+    "file upload",
+    "billing",
+    "ticketing",
+    "ehr draft note",
+    "mcp",
+    "mcp server",
+    "mcp servers",
+    "tool broker",
+    "webhook",
+    "http",
+    "api call",
+    "calendar write",
+    "sms",
+    "phone dialer",
+    "payment",
+    "remote desktop",
+}
+
+
 def score_agent_permissions(tool: dict[str, Any]) -> DomainResult:
     score = 4
     evidence: list[str] = []
     gaps: list[str] = []
     actions: list[str] = []
     agent_tools = lower_list(tool.get("agent_tools"))
-    high_impact = [name for name in agent_tools if name in {"ehr", "fhir", "email", "shell", "browser", "files", "file upload", "billing", "ticketing", "ehr draft note"}]
+    mcp_servers = lower_list(tool.get("mcp_servers"))
+    high_impact = [name for name in agent_tools if name in HIGH_IMPACT_AGENT_TOOLS]
     approval = normalized(tool.get("human_approval"))
     logging = normalized(tool.get("audit_logging"))
     scope = normalized(tool.get("tool_scope"))
+    autonomous = normalized(tool.get("autonomous_mode"))
+    network_egress = normalized(tool.get("network_egress"))
+    has_mcp = bool(mcp_servers) or any(
+        token in name for name in agent_tools for token in ("mcp", "tool broker", "tool-broker")
+    )
+    has_egress = network_egress in {"yes", "true", "open", "unrestricted", "internet"} or any(
+        token in name
+        for name in agent_tools
+        for token in ("browser", "webhook", "http", "email", "sms", "api call")
+    )
 
-    if agent_tools:
-        evidence.append(f"Agent/tool capabilities recorded: {', '.join(agent_tools)}.")
+    if agent_tools or mcp_servers:
+        if agent_tools:
+            evidence.append(f"Agent/tool capabilities recorded: {', '.join(agent_tools)}.")
+        if mcp_servers:
+            evidence.append(f"MCP/tool-broker servers recorded: {', '.join(mcp_servers)}.")
+            high_impact = high_impact or ["mcp"]
         if high_impact and approval not in {"required", "some"}:
             gaps.append("High-impact tools lack a human approval gate.")
-            actions.append("Require human approval before EHR, email, file, billing, shell, browser, or ticketing actions.")
+            actions.append(
+                "Require human approval before EHR, email, file, billing, shell, browser, MCP, webhook, or ticketing actions."
+            )
             score -= 2
         if logging not in {"complete", "documented"}:
             gaps.append("Agent/tool audit logging is missing or partial.")
@@ -222,17 +267,51 @@ def score_agent_permissions(tool: dict[str, Any]) -> DomainResult:
             gaps.append("Tool scope is broad or unknown.")
             actions.append("Document least-privilege scopes and customer disable switches for each tool.")
             score -= 1
+        if has_mcp and scope not in {"limited", "least privilege", "documented"}:
+            gaps.append("MCP/tool-broker exposure lacks a least-privilege allowlist.")
+            actions.append(
+                "Inventory MCP servers and tools, allowlist only required servers, and block filesystem/shell egress by default."
+            )
+            score -= 1
+        if autonomous in {"yes", "true", "full", "unsupervised"}:
+            gaps.append("Autonomous mode can act without step-by-step human control.")
+            actions.append("Disable unsupervised autonomous mode for PHI or high-impact tools; require human approval per action class.")
+            score -= 2 if high_impact or has_mcp else 1
+        elif autonomous in {"partial", "supervised", "human-in-loop", "human in the loop"}:
+            evidence.append("Autonomous mode is supervised or partial.")
+        elif autonomous in {"no", "false", "disabled", "none"}:
+            evidence.append("Autonomous mode is disabled.")
+        elif agent_tools or mcp_servers:
+            gaps.append("Autonomous/agent execution mode is unknown.")
+            actions.append("Document whether the agent can act without a human in the loop, and for which tools.")
+            score -= 1
+        if has_egress and logging not in {"complete", "documented"}:
+            gaps.append("Network-capable tools lack complete audit logging.")
+            actions.append("Log every outbound email, SMS, webhook, browser, or HTTP action with destination class and approver.")
+            score -= 1
+        prompt_tests = normalized(tool.get("prompt_injection_testing"))
+        if (has_mcp or has_egress) and prompt_tests not in {"documented", "complete"}:
+            gaps.append("Prompt-injection testing is missing for MCP or network-capable agents.")
+            actions.append("Test direct and indirect prompt injection against MCP tools, browser actions, and outbound message tools.")
+            score -= 1
     else:
-        evidence.append("No agent tools are recorded.")
+        evidence.append("No agent tools or MCP servers are recorded.")
 
     if boolish(tool.get("customer_can_disable_tools")):
         evidence.append("Customer can disable or restrict tools.")
-    elif agent_tools:
+    elif agent_tools or mcp_servers:
         gaps.append("Customer disable switch for tools is not confirmed.")
-        actions.append("Confirm the practice can disable agent tools or reduce scopes.")
+        actions.append("Confirm the practice can disable agent tools, MCP servers, or reduce scopes.")
         score -= 1
 
-    return domain("Agent and non-human identity permissions", score, evidence, gaps, actions, ["OWASP LLM06", "HHS CPG Access Management", "NIST AI RMF Manage"])
+    return domain(
+        "Agent and non-human identity permissions",
+        score,
+        evidence,
+        gaps,
+        actions,
+        ["OWASP LLM06", "OWASP LLM08", "HHS CPG Access Management", "NIST AI RMF Manage"],
+    )
 
 
 def score_supply_chain(tool: dict[str, Any]) -> DomainResult:
@@ -401,10 +480,19 @@ def find_critical_flags(tool: dict[str, Any], domains: list[DomainResult]) -> li
         flags.append("Block PHI use until customer-data training/product-improvement use is prohibited or formally approved.")
     if (boolish(tool.get("rag")) or "rag" in lower_list(tool.get("model_types"))) and normalized(tool.get("permission_sync")) in {"unknown", "none", ""}:
         flags.append("Do not connect RAG to practice documents until permission sync and retrieval logging are verified.")
-    if lower_list(tool.get("agent_tools")) and approval in {"none", "unknown", ""}:
+    agent_tools = lower_list(tool.get("agent_tools"))
+    mcp_servers = lower_list(tool.get("mcp_servers"))
+    autonomous = normalized(tool.get("autonomous_mode"))
+    if (agent_tools or mcp_servers) and approval in {"none", "unknown", ""}:
         flags.append("Disable agent actions until least-privilege scopes and human approval gates are documented.")
-    if lower_list(tool.get("agent_tools")) and logging in {"none", "unknown", ""}:
+    if (agent_tools or mcp_servers) and logging in {"none", "unknown", ""}:
         flags.append("Disable or limit agent tools until audit logging is available.")
+    if mcp_servers and approval in {"none", "unknown", ""}:
+        flags.append("Block MCP/tool-broker connections until each server is allowlisted and human-approved.")
+    if autonomous in {"yes", "true", "full", "unsupervised"} and (
+        agent_tools or mcp_servers or any(value in {"phi", "ephi", "claims", "audio", "clinical notes"} for value in data_types)
+    ):
+        flags.append("Disable unsupervised autonomous mode for PHI or tool-using agents until human-in-the-loop gates exist.")
     if clinical and not boolish(tool.get("clinician_review")):
         flags.append("Do not use in clinical workflow until clinician owner review is documented.")
     if boolish(tool.get("prescription_support")) and normalized(tool.get("state_policy_review")) not in {"documented", "complete"}:
@@ -499,7 +587,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "- Signed BAA or documented non-PHI rationale for every vendor touching PHI.",
             "- Vendor answers for training/product-improvement data use, retention, deletion, subprocessors, and security contact.",
             "- RAG permission-sync evidence, retrieval logs, and prompt-injection test results where applicable.",
-            "- Agent tool manifest with scopes, approval gates, and audit logs.",
+            "- Agent/MCP tool manifest with scopes, allowlisted servers, approval gates, autonomous-mode setting, and audit logs.",
             "- Clinical safety case, clinician owner approval, and evaluation results for clinical or patient-facing tools.",
             "- FDA/medical-device analysis and state-policy review where workflows support diagnosis, treatment, prescribing, triage, or multi-state care.",
             "",
@@ -632,7 +720,14 @@ def _normalize_csv_row(row: dict[str, str]) -> dict[str, Any]:
             normalized_row[key] = True
         elif value in {"false", "False", "no", "No"}:
             normalized_row[key] = False
-        elif key in {"data_types", "model_types", "agent_tools", "evaluation_dimensions", "certifications"}:
+        elif key in {
+            "data_types",
+            "model_types",
+            "agent_tools",
+            "mcp_servers",
+            "evaluation_dimensions",
+            "certifications",
+        }:
             normalized_row[key] = [item.strip() for item in value.split(";") if item.strip()]
         else:
             normalized_row[key] = value
