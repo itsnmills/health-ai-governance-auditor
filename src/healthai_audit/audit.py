@@ -67,7 +67,7 @@ def audit_inventory(inventory: dict[str, Any]) -> dict[str, Any]:
             "review_owner": str(inventory.get("review_owner", "")),
             "review_date": str(inventory.get("review_date", "")),
             "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "method": "HealthAI Audit deterministic scoring v0.1.1",
+            "method": "HealthAI Audit deterministic scoring v0.2.0",
             "disclaimer": "Triage support only; not legal, clinical, HIPAA, FDA, or security certification advice.",
         },
         "summary": {
@@ -78,6 +78,29 @@ def audit_inventory(inventory: dict[str, Any]) -> dict[str, Any]:
         },
         "assessments": [_assessment_to_dict(item) for item in assessments],
     }
+
+
+def run_audit(
+    path: Path,
+    *,
+    strict_safety: bool = True,
+    include_source: bool = False,
+    with_decisions: bool = True,
+) -> dict[str, Any]:
+    """Load, safety-check, score, decide, and sanitize an inventory file.
+
+    This is the preferred entrypoint for CLI and automation. It fails closed
+    when the inventory looks like it contains secrets or free-text PHI risk.
+    """
+    from healthai_audit.decisions import attach_decisions
+    from healthai_audit.safety import assert_inventory_safe, sanitize_report
+
+    inventory = load_inventory(path)
+    assert_inventory_safe(path, inventory, strict=strict_safety)
+    report = audit_inventory(inventory)
+    if with_decisions:
+        report = attach_decisions(report)
+    return sanitize_report(report, include_source=include_source)
 
 
 def assess_tool(tool: dict[str, Any]) -> ToolAssessment:
@@ -149,7 +172,19 @@ def score_data_governance(tool: dict[str, Any]) -> DomainResult:
         actions.append("Document retention, deletion, and export terms.")
         score -= 1
     else:
-        evidence.append(f"Retention period recorded: {retention} days.")
+        try:
+            retention_days = int(retention)
+            if retention_days < 0:
+                raise ValueError("negative retention")
+            evidence.append(f"Retention period recorded: {retention_days} days.")
+            if touches_phi and retention_days > 365:
+                gaps.append("PHI retention exceeds 365 days without a documented justification in inventory.")
+                actions.append("Confirm retention minimum-necessary rationale and deletion/export process for PHI.")
+                score -= 1
+        except (TypeError, ValueError):
+            gaps.append("Retention period is not a valid non-negative integer day count.")
+            actions.append("Record retention as an integer number of days, plus deletion terms.")
+            score -= 1
 
     if subprocessors in {"unknown", "unavailable", "none"}:
         gaps.append("Subprocessor list is missing or unavailable.")
@@ -527,19 +562,33 @@ def render_report(report: dict[str, Any], output_format: str) -> str:
 def render_markdown(report: dict[str, Any]) -> str:
     metadata = report["metadata"]
     summary = report["summary"]
+    decision_counts = summary.get("decision_counts") or {}
     lines = [
         "# HealthAI Audit Report",
         "",
         f"- Practice: {metadata['practice']}",
         f"- Generated: {metadata['generated_at_utc']}",
+        f"- Method: {metadata.get('method', '')}",
         f"- Tool count: {summary['tool_count']}",
         f"- Average maturity score: {summary['average_maturity_score']}/100",
         f"- Risk counts: Critical {summary['risk_counts']['Critical']}, High {summary['risk_counts']['High']}, Medium {summary['risk_counts']['Medium']}, Low {summary['risk_counts']['Low']}",
-        "",
-        "> Triage support only. This report is not legal, clinical, HIPAA, FDA, or security certification advice.",
-        "",
-        "## Priority Actions",
     ]
+    if decision_counts:
+        lines.append(
+            f"- Decisions: block {decision_counts.get('block', 0)}, restrict {decision_counts.get('restrict', 0)}, "
+            f"approve_with_conditions {decision_counts.get('approve_with_conditions', 0)}, "
+            f"approve {decision_counts.get('approve', 0)}"
+        )
+        lines.append(f"- Portfolio decision: {summary.get('portfolio_decision', 'n/a')}")
+    lines.extend(
+        [
+            "",
+            "> Triage support only. This report is not legal, clinical, HIPAA, FDA, or security certification advice.",
+            "> Raw inventory source fields are omitted by default to reduce accidental PHI leakage.",
+            "",
+            "## Priority Actions",
+        ]
+    )
 
     if summary["top_actions"]:
         lines.extend(f"- {item}" for item in summary["top_actions"])
@@ -559,6 +608,10 @@ def render_markdown(report: dict[str, Any]) -> str:
                 f"- Maturity score: {assessment['maturity_score']}/100",
             ]
         )
+        if assessment.get("decision"):
+            lines.append(f"- Decision: **{assessment['decision']}**")
+        if assessment.get("rule_ids"):
+            lines.append(f"- Rule IDs: {', '.join(assessment['rule_ids'])}")
         if assessment["critical_flags"]:
             lines.append("- Critical flags:")
             lines.extend(f"  - {flag}" for flag in assessment["critical_flags"])
@@ -612,6 +665,8 @@ def render_csv(report: dict[str, Any]) -> str:
             "workflow",
             "risk_level",
             "maturity_score",
+            "decision",
+            "rule_ids",
             "critical_flags",
             "priority_actions",
             "lowest_domain",
@@ -620,7 +675,8 @@ def render_csv(report: dict[str, Any]) -> str:
     )
     writer.writeheader()
     for assessment in report["assessments"]:
-        lowest = min(assessment["domain_results"], key=lambda item: item["score"])
+        domains = assessment.get("domain_results") or [{"name": "", "score": 0}]
+        lowest = min(domains, key=lambda item: item["score"])
         writer.writerow(
             {
                 "name": assessment["name"],
@@ -628,6 +684,8 @@ def render_csv(report: dict[str, Any]) -> str:
                 "workflow": assessment["workflow"],
                 "risk_level": assessment["risk_level"],
                 "maturity_score": assessment["maturity_score"],
+                "decision": assessment.get("decision", ""),
+                "rule_ids": "; ".join(assessment.get("rule_ids") or []),
                 "critical_flags": "; ".join(assessment["critical_flags"]),
                 "priority_actions": "; ".join(assessment["high_priority_actions"]),
                 "lowest_domain": lowest["name"],

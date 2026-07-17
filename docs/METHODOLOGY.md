@@ -35,13 +35,14 @@ Common high-priority findings:
 
 ### Agent and Non-Human Identity Permissions
 
-Looks for EHR/FHIR/email/file/browser/shell/ticketing access, least privilege, human approval, audit logs, and customer ability to disable tools.
+Looks for EHR/FHIR/email/file/browser/shell/ticketing access, MCP/tool-broker servers, autonomous mode, network egress, least privilege, human approval, audit logs, and customer ability to disable tools.
 
 Common high-priority findings:
 
-- Agent can act in EHR, email, files, ticketing, browser, shell, or billing systems without approval gates.
-- No audit logs for tool calls.
-- Tool scopes are broad or undocumented.
+- Agent can act in EHR, email, files, ticketing, browser, shell, billing, SMS, or MCP systems without approval gates.
+- Unsupervised autonomous mode enabled for PHI or high-impact tools.
+- No audit logs for tool calls or outbound actions.
+- Tool scopes or MCP servers are broad or undocumented.
 
 ### Development Supply Chain
 
@@ -81,6 +82,38 @@ Risk level is not legal or clinical advice. It is a triage label.
 - `High`: leadership, MSP, security, compliance, or counsel review is needed before expansion.
 - `Medium`: gaps should become tracked remediation items.
 - `Low`: no major gaps found in provided inventory, but evidence should still be validated.
+
+## Decisions (v0.2+)
+
+Risk levels feed a separate **decision** layer with stable rule IDs:
+
+| Decision | Meaning |
+| --- | --- |
+| `block` | Do not use for PHI / production until listed rules are closed |
+| `restrict` | Limited use only under documented guardrails |
+| `approve_with_conditions` | Usable with tracked remediation owners and dates |
+| `approve` | No major inventory gaps; still validate evidence offline |
+
+Examples of blocking rules:
+
+- `HA-BAA-001` PHI tool without signed BAA
+- `HA-TRAIN-001` customer-data training with PHI
+- `HA-MCP-001` MCP/tool-broker without approval gates
+- `HA-AUTO-001` unsupervised autonomous mode on PHI or tools
+
+Portfolio decision = worst tool decision. Owner packets export the queue without raw inventory source fields.
+
+## Safety model (v0.2+)
+
+Inventories are **fail-closed**:
+
+- secrets / key-shaped strings rejected
+- SSN-shaped values rejected
+- free-text note/prompt/transcript fields rejected
+- oversized files rejected
+- report JSON omits raw `source` unless `--include-source` (still redacts high-risk keys)
+
+This keeps the tool a governance workbench, not a place to paste clinical content.
 
 ## Output Use
 

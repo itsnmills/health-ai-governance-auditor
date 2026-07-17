@@ -35,11 +35,18 @@ def main() -> int:
         run([sys.executable, "-m", "healthai_audit", "score", "samples/sample_inventory.json", "--format", "markdown", "--out", str(out / "report.md")])
         run([sys.executable, "-m", "healthai_audit", "score", "samples/sample_inventory.json", "--format", "json", "--out", str(out / "report.json")])
         run([sys.executable, "-m", "healthai_audit", "score", "samples/sample_inventory.json", "--format", "csv", "--out", str(out / "report.csv")])
+        run([sys.executable, "-m", "healthai_audit", "packet", "samples/sample_inventory.json", "--out", str(out / "packet")])
+        run([sys.executable, "-m", "healthai_audit", "safety-check", "samples/sample_inventory.json"])
         report = json.loads((out / "report.json").read_text(encoding="utf-8"))
-        assert report["summary"]["tool_count"] == 3
+        assert report["summary"]["tool_count"] == 4
         assert report["summary"]["risk_counts"]["Critical"] >= 1
+        assert report["summary"]["portfolio_decision"] in {"block", "restrict", "approve_with_conditions", "approve"}
+        assert "source" not in report["assessments"][0]
+        assert report["assessments"][0].get("decision")
         assert "HealthAI Audit Report" in (out / "report.md").read_text(encoding="utf-8")
-        assert "risk_level" in (out / "report.csv").read_text(encoding="utf-8")
+        assert "decision" in (out / "report.csv").read_text(encoding="utf-8")
+        assert (out / "packet" / "owner-decision-packet.md").is_file()
+        assert (out / "packet" / "action-queue.csv").is_file()
     print("HealthAI Audit verification passed.")
     return 0
 

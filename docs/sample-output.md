@@ -34,6 +34,15 @@ Summary (v0.1.1 sample shape):
 5. Inventory MCP/tool-broker servers, allowlist only required ones, and disable unsupervised autonomous mode for PHI or high-impact tools.
 6. Keep a simple AI inventory with owner, workflow, data types, vendor, BAA status, retention, agent tools, MCP servers, and audit logging.
 
+## Decision Packet Shape (v0.2+)
+
+`healthai-audit packet` writes a portfolio decision, per-tool rule IDs, and an action queue. Example portfolio outcome for the sample inventory:
+
+- Portfolio decision: **block**
+- Blocking rules include `HA-BAA-001`, `HA-TRAIN-001`, `HA-MCP-001`, `HA-AUTO-001`, and related agent flags
+- Ambient Scribe may land as `approve` / `approve_with_conditions` depending on residual medium gaps
+- Raw inventory source fields are **not** included in packet JSON
+
 ## Reviewer-Safe Output
 
 The generated packet is intended to give a reviewer a clean evidence trail:
