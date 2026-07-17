@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 
 from healthai_audit.audit import render_report, run_audit, validate_inventory, load_inventory
+from healthai_audit.diff import diff_reports, load_report_or_inventory, render_diff
+from healthai_audit.kit_bridge import write_kit_bridge
 from healthai_audit.packet import write_packet
 from healthai_audit.safety import SafetyError, assert_inventory_safe, check_inventory_file
 from healthai_audit.templates import TEMPLATES
@@ -27,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument(
         "--packet-dir",
         type=Path,
-        help="Write owner decision packet (markdown, CSV, JSON, vendor follow-ups) to this directory.",
+        help="Write owner decision packet + kit-bridge artifacts to this directory.",
     )
     score.add_argument(
         "--include-source",
@@ -42,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     packet = subparsers.add_parser(
         "packet",
-        help="Score inventory and write a PHI-avoidant owner/MSP decision packet directory.",
+        help="Score inventory and write a PHI-avoidant owner/MSP decision packet (+ kit bridge).",
     )
     packet.add_argument("input", type=Path, help="Path to inventory JSON or CSV.")
     packet.add_argument(
@@ -55,6 +57,42 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-unsafe",
         action="store_true",
         help="Do not fail closed on safety findings (not recommended).",
+    )
+    packet.add_argument(
+        "--no-kit-bridge",
+        action="store_true",
+        help="Skip Small Practice Security Kit bridge exports.",
+    )
+
+    kit = subparsers.add_parser(
+        "kit-export",
+        help="Score inventory and write only kit-bridge artifacts (ai-workflow-review + handoff CSV).",
+    )
+    kit.add_argument("input", type=Path, help="Path to inventory JSON or CSV.")
+    kit.add_argument(
+        "--out",
+        type=Path,
+        default=Path("reports/kit-bridge"),
+        help="Output directory (default: reports/kit-bridge).",
+    )
+    kit.add_argument(
+        "--allow-unsafe",
+        action="store_true",
+        help="Do not fail closed on safety findings (not recommended).",
+    )
+
+    diff = subparsers.add_parser(
+        "diff",
+        help="Diff two inventories or decision reports by tool name and rule ID.",
+    )
+    diff.add_argument("before", type=Path, help="Earlier inventory JSON or decisions/report JSON.")
+    diff.add_argument("after", type=Path, help="Later inventory JSON or decisions/report JSON.")
+    diff.add_argument("--format", choices=("markdown", "json"), default="markdown", help="Diff output format.")
+    diff.add_argument("--out", type=Path, help="Optional output path.")
+    diff.add_argument(
+        "--allow-unsafe",
+        action="store_true",
+        help="Do not fail closed on safety findings when inputs are inventories.",
     )
 
     safety = subparsers.add_parser("safety-check", help="Scan an inventory for secrets/PHI-risk patterns without scoring.")
@@ -90,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
             output = render_report(report, args.format)
             write_output(output, args.out)
             if args.packet_dir:
-                paths = write_packet(report, args.packet_dir)
+                paths = write_packet(report, args.packet_dir, kit_bridge=True)
                 sys.stderr.write(
                     "Wrote decision packet:\n"
                     + "\n".join(f"  {name}: {path}" for name, path in paths.items())
@@ -105,12 +143,35 @@ def main(argv: list[str] | None = None) -> int:
                 include_source=False,
                 with_decisions=True,
             )
-            paths = write_packet(report, args.out)
+            paths = write_packet(report, args.out, kit_bridge=not args.no_kit_bridge)
             sys.stdout.write(
                 "Decision packet written:\n"
                 + "\n".join(f"  {name}: {path}" for name, path in paths.items())
                 + "\n"
             )
+            return 0
+
+        if args.command == "kit-export":
+            report = run_audit(
+                args.input,
+                strict_safety=not args.allow_unsafe,
+                include_source=False,
+                with_decisions=True,
+            )
+            paths = write_kit_bridge(report, args.out)
+            sys.stdout.write(
+                "Kit bridge written:\n"
+                + "\n".join(f"  {name}: {path}" for name, path in paths.items())
+                + "\n"
+            )
+            return 0
+
+        if args.command == "diff":
+            before = load_report_or_inventory(args.before, strict_safety=not args.allow_unsafe)
+            after = load_report_or_inventory(args.after, strict_safety=not args.allow_unsafe)
+            result = diff_reports(before, after)
+            output = render_diff(result, args.format)
+            write_output(output, args.out)
             return 0
 
         if args.command == "safety-check":
@@ -161,12 +222,10 @@ def main(argv: list[str] | None = None) -> int:
 
 def write_output(output: str, out: Path | None) -> None:
     if out:
-        # Refuse path escape surprises: resolve and require parent exists or can be created under CWD-ish usage.
         out = out.expanduser()
         if out.exists() and out.is_dir():
             raise ValueError(f"--out must be a file path, not a directory: {out}")
         out.parent.mkdir(parents=True, exist_ok=True)
-        # Prefer exclusive-ish write of text; no follow of weird modes beyond normal open.
         out.write_text(output, encoding="utf-8")
     else:
         sys.stdout.write(output)

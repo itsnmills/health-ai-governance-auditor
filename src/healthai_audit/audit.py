@@ -32,6 +32,9 @@ class ToolAssessment:
     critical_flags: list[str]
     high_priority_actions: list[str]
     source: dict[str, Any]
+    data_types: list[str] = field(default_factory=list)
+    evidence_refs: list[dict[str, Any]] = field(default_factory=list)
+    evidence_status: dict[str, Any] = field(default_factory=dict)
 
 
 def load_inventory(path: Path) -> dict[str, Any]:
@@ -52,7 +55,8 @@ def load_inventory(path: Path) -> dict[str, Any]:
 def audit_inventory(inventory: dict[str, Any]) -> dict[str, Any]:
     """Return a deterministic audit report for an AI inventory."""
     tools = [tool for tool in inventory.get("tools", []) if isinstance(tool, dict)]
-    assessments = [assess_tool(tool) for tool in tools]
+    review_date = str(inventory.get("review_date", ""))
+    assessments = [assess_tool(tool, review_date=review_date) for tool in tools]
     counts = {level: sum(1 for item in assessments if item.risk_level == level) for level in ("Critical", "High", "Medium", "Low")}
     top_actions: list[str] = []
     for assessment in assessments:
@@ -67,7 +71,7 @@ def audit_inventory(inventory: dict[str, Any]) -> dict[str, Any]:
             "review_owner": str(inventory.get("review_owner", "")),
             "review_date": str(inventory.get("review_date", "")),
             "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "method": "HealthAI Audit deterministic scoring v0.2.0",
+            "method": "HealthAI Audit deterministic scoring v0.3.0",
             "disclaimer": "Triage support only; not legal, clinical, HIPAA, FDA, or security certification advice.",
         },
         "summary": {
@@ -103,7 +107,9 @@ def run_audit(
     return sanitize_report(report, include_source=include_source)
 
 
-def assess_tool(tool: dict[str, Any]) -> ToolAssessment:
+def assess_tool(tool: dict[str, Any], *, review_date: str = "") -> ToolAssessment:
+    from healthai_audit.evidence import evidence_status_for_tool, normalize_evidence_refs
+
     domain_results = [
         score_data_governance(tool),
         score_model_rag_security(tool),
@@ -121,6 +127,12 @@ def assess_tool(tool: dict[str, Any]) -> ToolAssessment:
     for result in domain_results:
         actions.extend(result.actions)
 
+    evidence_refs, evidence_gaps = normalize_evidence_refs(tool.get("evidence_refs"))
+    evidence_status = evidence_status_for_tool(
+        tool, evidence_refs, evidence_gaps, review_date=review_date
+    )
+    data_types = [str(item) for item in as_list(tool.get("data_types")) if str(item).strip()]
+
     return ToolAssessment(
         name=str(tool.get("name", "Unnamed AI tool")),
         vendor=str(tool.get("vendor", "Unknown vendor")),
@@ -131,6 +143,9 @@ def assess_tool(tool: dict[str, Any]) -> ToolAssessment:
         critical_flags=critical_flags,
         high_priority_actions=_unique(actions)[:8],
         source=tool,
+        data_types=data_types,
+        evidence_refs=evidence_refs,
+        evidence_status=evidence_status,
     )
 
 
@@ -612,6 +627,19 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- Decision: **{assessment['decision']}**")
         if assessment.get("rule_ids"):
             lines.append(f"- Rule IDs: {', '.join(assessment['rule_ids'])}")
+        if assessment.get("evidence_status"):
+            ev = assessment["evidence_status"]
+            lines.append(
+                f"- Evidence: {ev.get('status', 'n/a')} "
+                f"(active={ev.get('active_count', 0)}, covering={ev.get('covering_count', 0)})"
+            )
+        if assessment.get("evidence_refs"):
+            lines.append("- Evidence refs:")
+            for ref in assessment["evidence_refs"][:5]:
+                lines.append(
+                    f"  - `{ref.get('id')}` · {ref.get('kind')} · `{ref.get('path')}` · "
+                    f"reviewed {ref.get('reviewed_on') or 'n/a'}"
+                )
         if assessment["critical_flags"]:
             lines.append("- Critical flags:")
             lines.extend(f"  - {flag}" for flag in assessment["critical_flags"])
@@ -756,6 +784,9 @@ def _assessment_to_dict(assessment: ToolAssessment) -> dict[str, Any]:
         "maturity_score": assessment.maturity_score,
         "critical_flags": assessment.critical_flags,
         "high_priority_actions": assessment.high_priority_actions,
+        "data_types": assessment.data_types,
+        "evidence_refs": assessment.evidence_refs,
+        "evidence_status": assessment.evidence_status,
         "domain_results": [
             {
                 "name": result.name,
@@ -787,6 +818,13 @@ def _normalize_csv_row(row: dict[str, str]) -> dict[str, Any]:
             "certifications",
         }:
             normalized_row[key] = [item.strip() for item in value.split(";") if item.strip()]
+        elif key == "evidence_refs" and value.strip():
+            # CSV cannot express full evidence objects; store path-only stubs.
+            normalized_row[key] = [
+                {"id": f"EVID-CSV-{i + 1:03d}", "kind": "other", "path": item.strip()}
+                for i, item in enumerate(value.split(";"))
+                if item.strip()
+            ]
         else:
             normalized_row[key] = value
     return normalized_row

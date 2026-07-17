@@ -36,6 +36,14 @@ def main() -> int:
         run([sys.executable, "-m", "healthai_audit", "score", "samples/sample_inventory.json", "--format", "json", "--out", str(out / "report.json")])
         run([sys.executable, "-m", "healthai_audit", "score", "samples/sample_inventory.json", "--format", "csv", "--out", str(out / "report.csv")])
         run([sys.executable, "-m", "healthai_audit", "packet", "samples/sample_inventory.json", "--out", str(out / "packet")])
+        run([sys.executable, "-m", "healthai_audit", "kit-export", "samples/sample_inventory.json", "--out", str(out / "kit")])
+        run([
+            sys.executable, "-m", "healthai_audit", "diff",
+            "samples/sample_inventory.json",
+            "samples/sample_inventory_remediated.json",
+            "--format", "json",
+            "--out", str(out / "diff.json"),
+        ])
         run([sys.executable, "-m", "healthai_audit", "safety-check", "samples/sample_inventory.json"])
         report = json.loads((out / "report.json").read_text(encoding="utf-8"))
         assert report["summary"]["tool_count"] == 4
@@ -43,10 +51,16 @@ def main() -> int:
         assert report["summary"]["portfolio_decision"] in {"block", "restrict", "approve_with_conditions", "approve"}
         assert "source" not in report["assessments"][0]
         assert report["assessments"][0].get("decision")
+        assert "evidence_status" in report["assessments"][0]
+        assert "v0.3.0" in report["metadata"]["method"]
         assert "HealthAI Audit Report" in (out / "report.md").read_text(encoding="utf-8")
         assert "decision" in (out / "report.csv").read_text(encoding="utf-8")
         assert (out / "packet" / "owner-decision-packet.md").is_file()
         assert (out / "packet" / "action-queue.csv").is_file()
+        assert (out / "packet" / "kit-bridge" / "ai-workflow-review.md").is_file()
+        assert (out / "kit" / "handoff-actions.csv").is_file()
+        diff = json.loads((out / "diff.json").read_text(encoding="utf-8"))
+        assert diff["summary"]["rules_closed"] >= 1
     print("HealthAI Audit verification passed.")
     return 0
 

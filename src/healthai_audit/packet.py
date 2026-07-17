@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import Any
 
 
-def write_packet(report: dict[str, Any], out_dir: Path) -> dict[str, Path]:
+def write_packet(report: dict[str, Any], out_dir: Path, *, kit_bridge: bool = True) -> dict[str, Path]:
     """Write a local decision packet directory. Returns written paths."""
+    from healthai_audit.kit_bridge import write_kit_bridge
+
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = {
         "owner_packet": out_dir / "owner-decision-packet.md",
@@ -29,6 +31,11 @@ def write_packet(report: dict[str, Any], out_dir: Path) -> dict[str, Path]:
         encoding="utf-8",
     )
     paths["vendor_questions"].write_text(render_vendor_followups(report), encoding="utf-8")
+    if kit_bridge:
+        kit_dir = out_dir / "kit-bridge"
+        kit_paths = write_kit_bridge(report, kit_dir)
+        for name, path in kit_paths.items():
+            paths[f"kit_{name}"] = path
     return paths
 
 
@@ -48,6 +55,7 @@ def render_owner_packet(report: dict[str, Any]) -> str:
         "",
         "> Triage support only. Not legal, clinical, HIPAA, FDA, or security certification advice.",
         "> This packet is PHI-avoidant by design: raw inventory source fields are not included.",
+        "> Approve for PHI tools requires evidence refs (path/hash/date only).",
         "",
         "## Portfolio Summary",
         "",
@@ -55,16 +63,19 @@ def render_owner_packet(report: dict[str, Any]) -> str:
         f"- Risk counts: {summary.get('risk_counts', {})}",
         f"- Decisions: block {decisions.get('block', 0)}, restrict {decisions.get('restrict', 0)}, "
         f"approve_with_conditions {decisions.get('approve_with_conditions', 0)}, approve {decisions.get('approve', 0)}",
+        f"- Evidence: sufficient={summary.get('evidence_sufficient_tools', 0)}, "
+        f"PHI tools needing evidence={summary.get('evidence_missing_tools', 0)}",
         f"- Blocking rules: {', '.join(summary.get('blocking_rule_ids') or []) or 'None'}",
         "",
         "## Tool Decisions",
         "",
-        "| Tool | Vendor | Risk | Decision | Rule IDs | Top reason |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Tool | Vendor | Risk | Decision | Evidence | Rule IDs | Top reason |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for item in report.get("assessments", []):
         reasons = item.get("decision_reasons") or []
         top_reason = reasons[0] if reasons else "—"
+        ev = (item.get("evidence_status") or {}).get("status", "n/a")
         lines.append(
             "| "
             + " | ".join(
@@ -73,6 +84,7 @@ def render_owner_packet(report: dict[str, Any]) -> str:
                     _cell(item.get("vendor")),
                     _cell(item.get("risk_level")),
                     _cell(item.get("decision")),
+                    _cell(ev),
                     _cell(", ".join(item.get("rule_ids") or [])),
                     _cell(top_reason),
                 ]
@@ -100,8 +112,26 @@ def render_owner_packet(report: dict[str, Any]) -> str:
             "1. **Block** tools stay off until every listed rule is closed with evidence references (not PHI).",
             "2. **Restrict** tools may run only under documented limits (no PHI paste, human approval, limited MCP allowlist).",
             "3. **Approve with conditions** requires a dated remediation owner and review date.",
-            "4. Feed summary decisions into the Small Practice Security Kit AI workflow review section.",
-            "5. Keep BAAs, contracts, and logs outside this packet — store evidence references only.",
+            "4. Feed kit-bridge outputs (`kit-bridge/ai-workflow-review.md`, `handoff-actions.csv`) into Small Practice Security Kit.",
+            "5. Keep BAAs, contracts, and logs outside this packet — store evidence references only (path/hash/date).",
+            "6. Re-run with `healthai-audit diff before.json after.json` after remediation to prove closed rules.",
+            "",
+            "## Evidence refs (paths only)",
+            "",
+        ]
+    )
+    any_refs = False
+    for item in report.get("assessments", []):
+        for ref in item.get("evidence_refs") or []:
+            any_refs = True
+            lines.append(
+                f"- **{item.get('name')}** · `{ref.get('id')}` · {ref.get('kind')} · "
+                f"`{ref.get('path')}` · reviewed {ref.get('reviewed_on') or 'n/a'}"
+            )
+    if not any_refs:
+        lines.append("- None recorded.")
+    lines.extend(
+        [
             "",
             "## Boundaries",
             "",
@@ -194,6 +224,9 @@ def _packet_json(report: dict[str, Any]) -> dict[str, Any]:
                 "decision_reasons": item.get("decision_reasons"),
                 "critical_flags": item.get("critical_flags"),
                 "high_priority_actions": item.get("high_priority_actions"),
+                "data_types": item.get("data_types"),
+                "evidence_refs": item.get("evidence_refs"),
+                "evidence_status": item.get("evidence_status"),
             }
             for item in report.get("assessments", [])
         ],

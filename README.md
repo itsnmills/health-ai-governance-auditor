@@ -28,8 +28,8 @@ It reads a simple AI-tool inventory and produces:
 - Markdown, JSON, and CSV reports
 - a starter AI use policy and vendor questionnaire
 
-**Current public release:** [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md) — decision workbench + fail-closed safety  
-Prior: [`docs/releases/v0.1.1.md`](docs/releases/v0.1.1.md) (agent/MCP scoring)
+**Current public release:** [`docs/releases/v0.3.0.md`](docs/releases/v0.3.0.md) — evidence-bound approve, kit bridge, rule-ID diff  
+Prior: [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md) · [`docs/releases/v0.1.1.md`](docs/releases/v0.1.1.md)
 
 See the buyer-facing sample output shape in [`docs/sample-output.md`](docs/sample-output.md).
 
@@ -59,7 +59,7 @@ Generate a Markdown report (includes **decisions** and rule IDs):
 healthai-audit score samples/sample_inventory.json --format markdown --out reports/sample-report.md
 ```
 
-Write the **owner decision packet** (the v0.2 workbench output):
+Write the **owner decision packet** (includes kit bridge):
 
 ```bash
 healthai-audit packet samples/sample_inventory.json --out reports/decision-packet
@@ -67,10 +67,26 @@ healthai-audit packet samples/sample_inventory.json --out reports/decision-packe
 
 That directory contains:
 
-- `owner-decision-packet.md` — portfolio decision + tool table + action queue
+- `owner-decision-packet.md` — portfolio decision + tool table + action queue + evidence refs
 - `action-queue.csv` — MSP/owner handoff rows
 - `decisions.json` — machine-readable, **no raw inventory source**
 - `vendor-followups.md` — non-PHI vendor questions from gaps
+- `kit-bridge/ai-workflow-review.md` — Small Practice Security Kit table
+- `kit-bridge/handoff-actions.csv` — kit-shaped AI handoff rows
+- `kit-bridge/kit-import-manifest.json` — import metadata (`velari.kit_bridge.v1`)
+
+Kit bridge only:
+
+```bash
+healthai-audit kit-export samples/sample_inventory.json --out reports/kit-bridge
+```
+
+Prove remediation with **rule-ID diff**:
+
+```bash
+healthai-audit diff samples/sample_inventory.json samples/sample_inventory_remediated.json
+healthai-audit diff before/decisions.json after/decisions.json --format json --out reports/diff.json
+```
 
 Safety scan only:
 
@@ -147,7 +163,11 @@ Each tool receives 0-4 scores across six domains:
 
 Risk level is based on the lowest domain score plus high-impact flags such as missing BAAs for PHI tools, customer data training with PHI, RAG without permission sync, agent/MCP tools without approval gates, unsupervised autonomous mode, missing clinical safety review, missing state-policy review for prescribing support, and weak audit logging.
 
-Each tool also receives a **decision** (`block` / `restrict` / `approve_with_conditions` / `approve`) mapped to stable rule IDs (for example `HA-BAA-001`, `HA-MCP-001`). See [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
+Each tool also receives a **decision** (`block` / `restrict` / `approve_with_conditions` / `approve`) mapped to stable rule IDs (for example `HA-BAA-001`, `HA-MCP-001`, `HA-EVID-001`).
+
+**Evidence-bound approve (v0.3):** PHI-touching tools need non-expired `evidence_refs` (BAA/policy/SOC2/training opt-out/clinician signoff) before unconditional `approve`. Paths and hashes only — never paste document bodies or PHI.
+
+See [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
 
 ## Why This Helps Small Practices
 

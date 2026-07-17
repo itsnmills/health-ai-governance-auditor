@@ -4,7 +4,7 @@ HealthAI Audit is a local-first tool. It should not receive, store, or process p
 
 ## Supported Versions
 
-The current supported development line is `0.2.x`.
+The current supported development line is `0.3.x`.
 
 ## Reporting a Vulnerability
 

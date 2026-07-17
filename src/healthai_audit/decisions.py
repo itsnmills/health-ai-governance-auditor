@@ -75,6 +75,16 @@ RULES: dict[str, dict[str, str]] = {
         "decision": "approve_with_conditions",
         "owner": "Practice manager",
     },
+    "HA-EVID-001": {
+        "title": "PHI tool missing approve-grade evidence refs",
+        "decision": "approve_with_conditions",
+        "owner": "Practice manager / compliance",
+    },
+    "HA-EVID-002": {
+        "title": "Evidence refs expired",
+        "decision": "approve_with_conditions",
+        "owner": "Practice manager / compliance",
+    },
 }
 
 
@@ -110,6 +120,8 @@ class Decision:
 
 def decide_assessment(assessment: dict[str, Any]) -> Decision:
     """Map one tool assessment to a decision with rule IDs."""
+    from healthai_audit.evidence import apply_evidence_to_decision
+
     rule_ids: list[str] = []
     reasons: list[str] = []
     for flag in assessment.get("critical_flags") or []:
@@ -136,6 +148,17 @@ def decide_assessment(assessment: dict[str, Any]) -> Decision:
         decision = "approve"
         reasons = ["No critical flags and low residual risk from provided inventory."]
 
+    # Evidence-bound approve: PHI tools need non-expired covering refs.
+    evidence_status = assessment.get("evidence_status") or {}
+    decision, rule_ids, reasons = apply_evidence_to_decision(
+        decision, rule_ids, reasons, evidence_status
+    )
+    if rule_ids:
+        # Never softer than the worst mapped rule (blocks still win).
+        worst = _worst_decision(rule_ids)
+        if DECISION_RANK.get(worst, 9) < DECISION_RANK.get(decision, 9):
+            decision = worst
+
     owner_actions = []
     for rule_id in rule_ids:
         meta = RULES.get(rule_id, {})
@@ -154,6 +177,16 @@ def decide_assessment(assessment: dict[str, Any]) -> Decision:
                 "rule_id": rule_ids[0] if rule_ids else "HA-RISK-MED",
                 "title": str(action),
                 "owner": "Practice manager / MSP",
+                "decision": decision,
+            }
+        )
+    # Evidence collection actions
+    for gap in (evidence_status.get("gaps") or [])[:3]:
+        owner_actions.append(
+            {
+                "rule_id": "HA-EVID-001",
+                "title": str(gap),
+                "owner": "Practice manager / compliance",
                 "decision": decision,
             }
         )
@@ -210,9 +243,18 @@ def attach_decisions(report: dict[str, Any]) -> dict[str, Any]:
     summary["portfolio_decision"] = _portfolio_decision(decision_counts)
 
     metadata = dict(report.get("metadata", {}))
-    method = str(metadata.get("method", "HealthAI Audit"))
-    if "v0.2" not in method:
-        metadata["method"] = "HealthAI Audit deterministic scoring v0.2.0"
+    metadata["method"] = "HealthAI Audit deterministic scoring v0.3.0"
+
+    evidence_sufficient = sum(
+        1 for item in assessments_out if (item.get("evidence_status") or {}).get("status") == "sufficient"
+    )
+    summary["evidence_sufficient_tools"] = evidence_sufficient
+    summary["evidence_missing_tools"] = sum(
+        1
+        for item in assessments_out
+        if (item.get("evidence_status") or {}).get("status") in {"missing", "expired", "partial"}
+        and (item.get("evidence_status") or {}).get("requires_evidence_for_approve")
+    )
 
     return {
         "metadata": metadata,

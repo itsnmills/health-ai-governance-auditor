@@ -6,6 +6,8 @@ from pathlib import Path
 from healthai_audit.audit import audit_inventory, load_inventory, render_report, run_audit, validate_inventory
 from healthai_audit.cli import main
 from healthai_audit.decisions import attach_decisions, decide_assessment
+from healthai_audit.diff import diff_reports, load_report_or_inventory, render_diff
+from healthai_audit.kit_bridge import write_kit_bridge
 from healthai_audit.packet import write_packet
 from healthai_audit.safety import SafetyError, assert_inventory_safe, sanitize_report
 from healthai_audit.templates import TEMPLATES
@@ -13,6 +15,7 @@ from healthai_audit.templates import TEMPLATES
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE = ROOT / "samples" / "sample_inventory.json"
+SAMPLE_FIXED = ROOT / "samples" / "sample_inventory_remediated.json"
 
 
 class AuditTests(unittest.TestCase):
@@ -31,7 +34,7 @@ class AuditTests(unittest.TestCase):
         )
         self.assertIn(by_name["Ambient Scribe"]["risk_level"], {"Low", "Medium"})
         self.assertEqual(report["summary"]["tool_count"], 4)
-        self.assertIn("v0.2.0", report["metadata"]["method"])
+        self.assertIn("v0.3.0", report["metadata"]["method"])
 
     def test_run_audit_strips_source_and_adds_decisions(self) -> None:
         report = run_audit(SAMPLE)
@@ -300,6 +303,174 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(report["summary"]["portfolio_decision"], "block")
         self.assertTrue(report["action_queue"])
         self.assertIn("rule_catalog", report)
+        self.assertIn("HA-EVID-001", report["rule_catalog"])
+
+    def test_evidence_refs_gate_approve_for_phi(self) -> None:
+        good = audit_inventory(
+            {
+                "practice": "Test",
+                "review_date": "2026-07-16",
+                "tools": [
+                    {
+                        "name": "Safe PHI Tool",
+                        "vendor": "V",
+                        "workflow": "docs",
+                        "data_types": ["PHI"],
+                        "baa_status": "signed",
+                        "customer_data_training": "no",
+                        "retention_days": 30,
+                        "subprocessors": "available",
+                        "rag": False,
+                        "prompt_injection_testing": "documented",
+                        "agent_tools": [],
+                        "clinical_use": False,
+                        "patient_facing": False,
+                        "model_provenance": "documented",
+                        "dataset_provenance": "documented",
+                        "sbom": True,
+                        "dependency_scanning": True,
+                        "secrets_controls": "documented",
+                        "incident_process": "documented",
+                        "security_contact": "s@example.test",
+                        "certifications": ["SOC 2"],
+                        "evidence_refs": [
+                            {
+                                "id": "EVID-1",
+                                "kind": "baa",
+                                "path": "evidence/baa.pdf",
+                                "reviewed_on": "2026-01-01",
+                                "expires_on": "2027-01-01",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        decided = attach_decisions(good)
+        self.assertEqual(decided["assessments"][0]["evidence_status"]["status"], "sufficient")
+        self.assertEqual(decided["assessments"][0]["decision"], "approve")
+        self.assertNotIn("HA-EVID-001", decided["assessments"][0]["rule_ids"])
+
+        missing = audit_inventory(
+            {
+                "practice": "Test",
+                "review_date": "2026-07-16",
+                "tools": [
+                    {
+                        "name": "No Evidence PHI",
+                        "vendor": "V",
+                        "workflow": "docs",
+                        "data_types": ["PHI"],
+                        "baa_status": "signed",
+                        "customer_data_training": "no",
+                        "retention_days": 30,
+                        "subprocessors": "available",
+                        "rag": False,
+                        "prompt_injection_testing": "documented",
+                        "agent_tools": [],
+                        "clinical_use": False,
+                        "patient_facing": False,
+                        "model_provenance": "documented",
+                        "dataset_provenance": "documented",
+                        "sbom": True,
+                        "dependency_scanning": True,
+                        "secrets_controls": "documented",
+                        "incident_process": "documented",
+                        "security_contact": "s@example.test",
+                        "certifications": ["SOC 2"],
+                    }
+                ],
+            }
+        )
+        decided_missing = attach_decisions(missing)
+        self.assertIn(decided_missing["assessments"][0]["decision"], {"approve_with_conditions", "restrict", "block"})
+        self.assertIn("HA-EVID-001", decided_missing["assessments"][0]["rule_ids"])
+
+    def test_expired_evidence_flags(self) -> None:
+        report = attach_decisions(
+            audit_inventory(
+                {
+                    "practice": "Test",
+                    "review_date": "2026-07-16",
+                    "tools": [
+                        {
+                            "name": "Expired Evidence",
+                            "vendor": "V",
+                            "workflow": "docs",
+                            "data_types": ["PHI"],
+                            "baa_status": "signed",
+                            "customer_data_training": "no",
+                            "retention_days": 30,
+                            "subprocessors": "available",
+                            "prompt_injection_testing": "documented",
+                            "model_provenance": "documented",
+                            "dataset_provenance": "documented",
+                            "sbom": True,
+                            "dependency_scanning": True,
+                            "secrets_controls": "documented",
+                            "incident_process": "documented",
+                            "security_contact": "s@example.test",
+                            "certifications": ["SOC 2"],
+                            "evidence_refs": [
+                                {
+                                    "id": "EVID-OLD",
+                                    "kind": "baa",
+                                    "path": "evidence/old-baa.pdf",
+                                    "reviewed_on": "2024-01-01",
+                                    "expires_on": "2025-01-01",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            )
+        )
+        assessment = report["assessments"][0]
+        self.assertEqual(assessment["evidence_status"]["status"], "expired")
+        self.assertIn("HA-EVID-002", assessment["rule_ids"])
+
+    def test_kit_bridge_exports(self) -> None:
+        report = run_audit(SAMPLE)
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = write_kit_bridge(report, Path(tmp))
+            md = paths["ai_workflow_review"].read_text(encoding="utf-8")
+            self.assertIn("# AI Workflow Review", md)
+            self.assertIn("prohibited", md)
+            csv_text = paths["handoff_actions"].read_text(encoding="utf-8")
+            self.assertIn("action_id", csv_text)
+            self.assertIn("kit_decision", csv_text)
+            manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+            self.assertEqual(manifest["schema"], "velari.kit_bridge.v1")
+
+    def test_diff_closes_rules_on_remediation(self) -> None:
+        before = load_report_or_inventory(SAMPLE)
+        after = load_report_or_inventory(SAMPLE_FIXED)
+        result = diff_reports(before, after)
+        self.assertGreaterEqual(result["summary"]["rules_closed"], 1)
+        self.assertEqual(result["summary"]["rules_new"], 0)
+        self.assertTrue(any(row["direction"] == "improved" for row in result["decision_changes"]))
+        md = render_diff(result, "markdown")
+        self.assertIn("Closed rules", md)
+        self.assertIn(result["summary"]["net"], {"improved", "mixed"})
+
+    def test_cli_diff_and_kit_export(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.assertEqual(
+                main(["diff", str(SAMPLE), str(SAMPLE_FIXED), "--format", "json", "--out", str(out / "diff.json")]),
+                0,
+            )
+            self.assertEqual(main(["kit-export", str(SAMPLE), "--out", str(out / "kit")]), 0)
+            diff = json.loads((out / "diff.json").read_text(encoding="utf-8"))
+            self.assertGreaterEqual(diff["summary"]["rules_closed"], 1)
+            self.assertTrue((out / "kit" / "ai-workflow-review.md").is_file())
+
+    def test_packet_includes_kit_bridge(self) -> None:
+        report = run_audit(SAMPLE)
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = write_packet(report, Path(tmp))
+            self.assertTrue(paths["kit_ai_workflow_review"].is_file())
+            self.assertIn("evidence_refs", json.loads(paths["decisions_json"].read_text(encoding="utf-8"))["assessments"][0])
 
 
 if __name__ == "__main__":

@@ -55,6 +55,17 @@ def inventory_template() -> str:
                     "dependency_scanning": False,
                     "ide_extension_governance": "unknown",
                     "secrets_controls": "unknown",
+                    "evidence_refs": [
+                        {
+                            "id": "EVID-BAA-001",
+                            "kind": "baa",
+                            "path": "evidence/vendor-baa.pdf",
+                            "sha256": "",
+                            "reviewed_on": "2026-07-01",
+                            "expires_on": "2027-07-01",
+                            "covers_rules": ["HA-BAA-001"],
+                        }
+                    ],
                 }
             ],
         },
@@ -89,6 +100,21 @@ def questionnaire_template() -> str:
 - Can the practice allowlist, disable, or scope tools and MCP servers?
 - What network egress is allowed (email, SMS, browser, webhooks, arbitrary HTTP)?
 - Are tool calls, destinations, and approval decisions logged for review?
+
+## Evidence references (no PHI)
+
+For each control claim, record reference-only evidence:
+
+| Field | Example |
+| --- | --- |
+| id | EVID-BAA-001 |
+| kind | baa / policy / soc2 / training_opt_out / clinician_signoff / mcp_allowlist |
+| path | evidence/vendor-baa.pdf (relative local path) |
+| sha256 | optional 64-hex digest of the file |
+| reviewed_on | 2026-07-01 |
+| expires_on | 2027-07-01 |
+
+Do not paste contract text, patient data, or credentials into the inventory.
 
 - Are retention, deletion, and export guarantees contractually defined?
 - Which subprocessors can access customer data?

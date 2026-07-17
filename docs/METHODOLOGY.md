@@ -101,7 +101,42 @@ Examples of blocking rules:
 - `HA-MCP-001` MCP/tool-broker without approval gates
 - `HA-AUTO-001` unsupervised autonomous mode on PHI or tools
 
+Evidence / approve-condition rules (v0.3+):
+
+- `HA-EVID-001` PHI tool missing approve-grade evidence refs
+- `HA-EVID-002` evidence refs expired relative to inventory `review_date`
+
 Portfolio decision = worst tool decision. Owner packets export the queue without raw inventory source fields.
+
+## Evidence refs (v0.3+)
+
+Evidence is **reference-only metadata** attached to each tool:
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `id` | recommended | Stable evidence ID for binders |
+| `kind` | yes | `baa`, `policy`, `soc2`, `training_opt_out`, `clinician_signoff`, `mcp_allowlist`, … |
+| `path` | yes | Relative local path; no `..`, no URL schemes |
+| `sha256` | optional | 64-hex digest if the practice hashes files |
+| `reviewed_on` | recommended | `YYYY-MM-DD` |
+| `expires_on` | recommended | `YYYY-MM-DD`; expired refs fail approve for PHI tools |
+| `covers_rules` | optional | Rule IDs this ref is meant to close |
+
+HealthAI Audit does **not** open the files at `path`. Operators keep BAAs and signoffs in their private binder.
+
+## Kit bridge (v0.3+)
+
+`kit-export` / packet `kit-bridge/` maps decisions into Small Practice Security Kit language:
+
+| HealthAI decision | Kit label |
+| --- | --- |
+| `approve` | allowed |
+| `approve_with_conditions` / `restrict` | restricted |
+| `block` | prohibited |
+
+## Diff (v0.3+)
+
+`healthai-audit diff before after` compares rule IDs and decisions per tool name so remediation can be proven across runs (closed rules vs regressions).
 
 ## Safety model (v0.2+)
 
