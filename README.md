@@ -28,8 +28,8 @@ It reads a simple AI-tool inventory and produces:
 - Markdown, JSON, and CSV reports
 - a starter AI use policy and vendor questionnaire
 
-**Current public release:** [`docs/releases/v0.3.0.md`](docs/releases/v0.3.0.md) — evidence-bound approve, kit bridge, rule-ID diff  
-Prior: [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md) · [`docs/releases/v0.1.1.md`](docs/releases/v0.1.1.md)
+**Current public release:** [`docs/releases/v0.4.0.md`](docs/releases/v0.4.0.md) — **automated** policy packs + one-command `run`  
+Prior: [`docs/releases/v0.3.0.md`](docs/releases/v0.3.0.md) · [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md)
 
 See the buyer-facing sample output shape in [`docs/sample-output.md`](docs/sample-output.md).
 
@@ -51,7 +51,27 @@ python -m pip install -e .
 
 No runtime dependencies are required beyond Python 3.11+.
 
-## Quick Start
+## Quick Start (customers — one command)
+
+```bash
+healthai-audit run samples/sample_dental_msp.json
+# or: healthai-audit run path/to/client-inventory.json --out reports/client-name
+```
+
+That **automatically**:
+
+1. Safety-checks the inventory  
+2. Detects the right policy pack (dental / behavioral / general + multi-state / MSP overlays)  
+3. Scores tools and applies pack rules  
+4. Writes the full decision packet + kit bridge + `RUN_SUMMARY.md`  
+
+No `--pack` flag. Optional `practice_profile` in the inventory improves detection; name/tool signals work without it.
+
+```bash
+healthai-audit detect-pack samples/sample_dental_msp.json   # see what pack would apply
+```
+
+### Advanced / partial commands
 
 Generate a Markdown report (includes **decisions** and rule IDs):
 

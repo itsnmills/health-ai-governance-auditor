@@ -2,6 +2,11 @@
   "practice": "Northside Family Clinic",
   "review_owner": "Practice Manager",
   "review_date": "2026-07-16",
+  "practice_profile": {
+    "type": "general",
+    "states": ["MO"],
+    "msp_managed": false
+  },
   "tools": [
     {
       "name": "Ambient Scribe",

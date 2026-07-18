@@ -45,6 +45,13 @@ def main() -> int:
             "--out", str(out / "diff.json"),
         ])
         run([sys.executable, "-m", "healthai_audit", "safety-check", "samples/sample_inventory.json"])
+        run([sys.executable, "-m", "healthai_audit", "detect-pack", "samples/sample_dental_msp.json"])
+        run([
+            sys.executable, "-m", "healthai_audit", "run",
+            "samples/sample_dental_msp.json",
+            "--out", str(out / "auto-run"),
+            "--json-summary",
+        ])
         report = json.loads((out / "report.json").read_text(encoding="utf-8"))
         assert report["summary"]["tool_count"] == 4
         assert report["summary"]["risk_counts"]["Critical"] >= 1
@@ -52,13 +59,20 @@ def main() -> int:
         assert "source" not in report["assessments"][0]
         assert report["assessments"][0].get("decision")
         assert "evidence_status" in report["assessments"][0]
-        assert "v0.3.0" in report["metadata"]["method"]
+        assert "v0.4.0" in report["metadata"]["method"]
+        assert report["metadata"].get("policy_pack", {}).get("auto") is True
         assert "HealthAI Audit Report" in (out / "report.md").read_text(encoding="utf-8")
         assert "decision" in (out / "report.csv").read_text(encoding="utf-8")
         assert (out / "packet" / "owner-decision-packet.md").is_file()
         assert (out / "packet" / "action-queue.csv").is_file()
         assert (out / "packet" / "kit-bridge" / "ai-workflow-review.md").is_file()
         assert (out / "kit" / "handoff-actions.csv").is_file()
+        assert (out / "auto-run" / "RUN_SUMMARY.md").is_file()
+        assert (out / "auto-run" / "kit-bridge" / "ai-workflow-review.md").is_file()
+        auto_report = json.loads((out / "auto-run" / "report.json").read_text(encoding="utf-8"))
+        assert "dental" in str(auto_report["metadata"]["policy_pack"]["label"])
+        assert "multi_state" in auto_report["metadata"]["policy_pack"]["overlays"]
+        assert "msp_managed" in auto_report["metadata"]["policy_pack"]["overlays"]
         diff = json.loads((out / "diff.json").read_text(encoding="utf-8"))
         assert diff["summary"]["rules_closed"] >= 1
     print("HealthAI Audit verification passed.")

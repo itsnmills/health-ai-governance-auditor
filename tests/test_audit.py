@@ -34,7 +34,7 @@ class AuditTests(unittest.TestCase):
         )
         self.assertIn(by_name["Ambient Scribe"]["risk_level"], {"Low", "Medium"})
         self.assertEqual(report["summary"]["tool_count"], 4)
-        self.assertIn("v0.3.0", report["metadata"]["method"])
+        self.assertIn("v0.4.0", report["metadata"]["method"])
 
     def test_run_audit_strips_source_and_adds_decisions(self) -> None:
         report = run_audit(SAMPLE)
@@ -471,6 +471,54 @@ class AuditTests(unittest.TestCase):
             paths = write_packet(report, Path(tmp))
             self.assertTrue(paths["kit_ai_workflow_review"].is_file())
             self.assertIn("evidence_refs", json.loads(paths["decisions_json"].read_text(encoding="utf-8"))["assessments"][0])
+
+    def test_auto_detects_dental_msp_multi_state_pack(self) -> None:
+        from healthai_audit.packs import detect_pack, apply_pack_flags
+        from healthai_audit.audit import load_inventory
+
+        dental = ROOT / "samples" / "sample_dental_msp.json"
+        inventory = load_inventory(dental)
+        selection = detect_pack(inventory)
+        self.assertEqual(selection.primary, "dental_small")
+        self.assertIn("multi_state", selection.overlays)
+        self.assertIn("msp_managed", selection.overlays)
+
+        report = run_audit(dental)
+        self.assertEqual(report["metadata"]["policy_pack"]["primary"], "dental_small")
+        self.assertTrue(report["metadata"]["policy_pack"]["auto"])
+        # Imaging without BAA should pick up pack rule via critical flags / rule ids
+        by_name = {item["name"]: item for item in report["assessments"]}
+        imaging = by_name["Dental Imaging AI"]
+        self.assertEqual(imaging["decision"], "block")
+        self.assertTrue(
+            any(r.startswith("HA-PACK-") or r.startswith("HA-BAA") or r.startswith("HA-CLIN") for r in imaging["rule_ids"])
+        )
+
+    def test_run_command_writes_full_packet(self) -> None:
+        dental = ROOT / "samples" / "sample_dental_msp.json"
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "auto"
+            self.assertEqual(main(["run", str(dental), "--out", str(out), "--json-summary"]), 0)
+            self.assertTrue((out / "RUN_SUMMARY.md").is_file())
+            self.assertTrue((out / "owner-decision-packet.md").is_file())
+            self.assertTrue((out / "kit-bridge" / "handoff-actions.csv").is_file())
+            report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+            self.assertIn("dental_small", report["metadata"]["policy_pack"]["label"])
+
+    def test_detect_pack_cli(self) -> None:
+        dental = ROOT / "samples" / "sample_dental_msp.json"
+        self.assertEqual(main(["detect-pack", str(dental)]), 0)
+
+    def test_infer_dental_from_practice_name_without_profile(self) -> None:
+        from healthai_audit.packs import detect_pack
+
+        selection = detect_pack(
+            {
+                "practice": "Sunrise Dental Group",
+                "tools": [{"name": "Charting helper", "workflow": "notes", "vendor": "X"}],
+            }
+        )
+        self.assertEqual(selection.primary, "dental_small")
 
 
 if __name__ == "__main__":

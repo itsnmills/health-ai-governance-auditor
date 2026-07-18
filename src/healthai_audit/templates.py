@@ -11,6 +11,11 @@ def inventory_template() -> str:
             "practice": "Example Clinic",
             "review_owner": "Practice Manager",
             "review_date": "2026-05-01",
+            "practice_profile": {
+                "type": "general",
+                "states": ["MO"],
+                "msp_managed": False
+            },
             "tools": [
                 {
                     "name": "AI Tool Name",

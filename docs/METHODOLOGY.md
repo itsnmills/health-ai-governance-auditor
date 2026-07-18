@@ -138,6 +138,26 @@ HealthAI Audit does **not** open the files at `path`. Operators keep BAAs and si
 
 `healthai-audit diff before after` compares rule IDs and decisions per tool name so remediation can be proven across runs (closed rules vs regressions).
 
+## Automated policy packs (v0.4+)
+
+Customers run:
+
+```bash
+healthai-audit run inventory.json
+```
+
+Packs are **selected automatically** from:
+
+1. optional `practice_profile.type` / `states` / `msp_managed`
+2. else inference from practice name + tool names/workflows (dental, therapy, imaging, …)
+
+Overlays stack without user choice:
+
+- `multi_state` when more than one state is listed
+- `msp_managed` when MSP-managed is true or review owner looks like an MSP
+
+Pack-specific rules (`HA-PACK-*`) inject additional critical flags before decision mapping. Operators do not pass `--pack`.
+
 ## Safety model (v0.2+)
 
 Inventories are **fail-closed**:

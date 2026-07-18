@@ -21,6 +21,29 @@ class DomainResult:
     mappings: list[str] = field(default_factory=list)
 
 
+# Controlled fields kept after source strip so auto policy packs still work.
+CONTROL_SNAPSHOT_KEYS = (
+    "baa_status",
+    "clinical_use",
+    "patient_facing",
+    "clinician_review",
+    "state_policy_review",
+    "retention_days",
+    "agent_tools",
+    "customer_can_disable_tools",
+    "audit_logging",
+    "prescription_support",
+    "customer_data_training",
+    "rag",
+    "permission_sync",
+    "human_approval",
+    "autonomous_mode",
+    "mcp_servers",
+    "network_egress",
+    "tool_scope",
+)
+
+
 @dataclass
 class ToolAssessment:
     name: str
@@ -35,6 +58,7 @@ class ToolAssessment:
     data_types: list[str] = field(default_factory=list)
     evidence_refs: list[dict[str, Any]] = field(default_factory=list)
     evidence_status: dict[str, Any] = field(default_factory=dict)
+    control_snapshot: dict[str, Any] = field(default_factory=dict)
 
 
 def load_inventory(path: Path) -> dict[str, Any]:
@@ -71,7 +95,7 @@ def audit_inventory(inventory: dict[str, Any]) -> dict[str, Any]:
             "review_owner": str(inventory.get("review_owner", "")),
             "review_date": str(inventory.get("review_date", "")),
             "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "method": "HealthAI Audit deterministic scoring v0.3.0",
+            "method": "HealthAI Audit automated policy scoring v0.4.0",
             "disclaimer": "Triage support only; not legal, clinical, HIPAA, FDA, or security certification advice.",
         },
         "summary": {
@@ -90,18 +114,35 @@ def run_audit(
     strict_safety: bool = True,
     include_source: bool = False,
     with_decisions: bool = True,
+    auto_pack: bool = True,
 ) -> dict[str, Any]:
-    """Load, safety-check, score, decide, and sanitize an inventory file.
+    """Load, safety-check, auto-pack, score, decide, and sanitize an inventory.
 
-    This is the preferred entrypoint for CLI and automation. It fails closed
-    when the inventory looks like it contains secrets or free-text PHI risk.
+    Policy packs are selected automatically from practice profile + tool signals.
+    Customers do not need to pass --pack. Fails closed on unsafe inventories.
     """
     from healthai_audit.decisions import attach_decisions
+    from healthai_audit.packs import apply_pack_flags, describe_pack, detect_pack
     from healthai_audit.safety import assert_inventory_safe, sanitize_report
 
     inventory = load_inventory(path)
     assert_inventory_safe(path, inventory, strict=strict_safety)
     report = audit_inventory(inventory)
+
+    if auto_pack:
+        selection = detect_pack(inventory)
+        report["metadata"]["policy_pack"] = describe_pack(selection)
+        report["metadata"]["method"] = "HealthAI Audit automated policy scoring v0.4.0"
+        for assessment in report["assessments"]:
+            pack_flags = apply_pack_flags(assessment, selection, inventory)
+            if pack_flags:
+                assessment["pack_flags"] = pack_flags
+                merged = list(assessment.get("critical_flags") or [])
+                for flag in pack_flags:
+                    if flag not in merged:
+                        merged.append(flag)
+                assessment["critical_flags"] = merged
+
     if with_decisions:
         report = attach_decisions(report)
     return sanitize_report(report, include_source=include_source)
@@ -132,6 +173,7 @@ def assess_tool(tool: dict[str, Any], *, review_date: str = "") -> ToolAssessmen
         tool, evidence_refs, evidence_gaps, review_date=review_date
     )
     data_types = [str(item) for item in as_list(tool.get("data_types")) if str(item).strip()]
+    control_snapshot = {key: tool.get(key) for key in CONTROL_SNAPSHOT_KEYS if key in tool}
 
     return ToolAssessment(
         name=str(tool.get("name", "Unnamed AI tool")),
@@ -146,6 +188,7 @@ def assess_tool(tool: dict[str, Any], *, review_date: str = "") -> ToolAssessmen
         data_types=data_types,
         evidence_refs=evidence_refs,
         evidence_status=evidence_status,
+        control_snapshot=control_snapshot,
     )
 
 
@@ -595,11 +638,17 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"approve {decision_counts.get('approve', 0)}"
         )
         lines.append(f"- Portfolio decision: {summary.get('portfolio_decision', 'n/a')}")
+    pack = metadata.get("policy_pack") or {}
+    if pack:
+        lines.append(f"- Policy pack (auto): {pack.get('label', 'n/a')}")
+        if pack.get("reasons"):
+            lines.append(f"- Pack selection: {'; '.join(pack.get('reasons') or [])}")
     lines.extend(
         [
             "",
             "> Triage support only. This report is not legal, clinical, HIPAA, FDA, or security certification advice.",
             "> Raw inventory source fields are omitted by default to reduce accidental PHI leakage.",
+            "> Policy packs are selected automatically — customers do not choose a pack flag.",
             "",
             "## Priority Actions",
         ]
@@ -787,6 +836,7 @@ def _assessment_to_dict(assessment: ToolAssessment) -> dict[str, Any]:
         "data_types": assessment.data_types,
         "evidence_refs": assessment.evidence_refs,
         "evidence_status": assessment.evidence_status,
+        "control_snapshot": assessment.control_snapshot,
         "domain_results": [
             {
                 "name": result.name,

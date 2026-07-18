@@ -13,6 +13,9 @@ from dataclasses import dataclass
 from typing import Any
 
 
+from healthai_audit.packs import PACK_RULES, pack_flag_to_rule
+
+
 # Stable rule catalog. Codes are public API — do not renumber casually.
 RULES: dict[str, dict[str, str]] = {
     "HA-BAA-001": {
@@ -86,6 +89,7 @@ RULES: dict[str, dict[str, str]] = {
         "owner": "Practice manager / compliance",
     },
 }
+RULES.update(PACK_RULES)
 
 
 FLAG_TO_RULE: list[tuple[str, str]] = [
@@ -243,7 +247,10 @@ def attach_decisions(report: dict[str, Any]) -> dict[str, Any]:
     summary["portfolio_decision"] = _portfolio_decision(decision_counts)
 
     metadata = dict(report.get("metadata", {}))
-    metadata["method"] = "HealthAI Audit deterministic scoring v0.3.0"
+    if "policy_pack" not in metadata:
+        metadata["method"] = "HealthAI Audit deterministic scoring v0.4.0"
+    else:
+        metadata["method"] = "HealthAI Audit automated policy scoring v0.4.0"
 
     evidence_sufficient = sum(
         1 for item in assessments_out if (item.get("evidence_status") or {}).get("status") == "sufficient"
@@ -272,7 +279,7 @@ def _rule_for_flag(flag: str) -> str | None:
     for prefix, rule_id in FLAG_TO_RULE:
         if flag.startswith(prefix) or prefix in flag:
             return rule_id
-    return None
+    return pack_flag_to_rule(flag)
 
 
 def _worst_decision(rule_ids: list[str]) -> str:

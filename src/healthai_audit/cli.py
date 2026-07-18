@@ -22,6 +22,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    run = subparsers.add_parser(
+        "run",
+        help="ONE command for customers: auto-detect policy pack, score, decide, write full packet + kit bridge.",
+    )
+    run.add_argument("input", type=Path, help="Path to inventory JSON or CSV.")
+    run.add_argument(
+        "--out",
+        type=Path,
+        help="Output directory (default: reports/auto-<practice>-<timestamp>).",
+    )
+    run.add_argument(
+        "--allow-unsafe",
+        action="store_true",
+        help="Do not fail closed on safety findings (not recommended).",
+    )
+    run.add_argument(
+        "--json-summary",
+        action="store_true",
+        help="Print machine-readable run summary JSON to stdout.",
+    )
+
+    detect = subparsers.add_parser(
+        "detect-pack",
+        help="Show which policy pack would be auto-selected (no scoring).",
+    )
+    detect.add_argument("input", type=Path, help="Path to inventory JSON or CSV.")
+
     score = subparsers.add_parser("score", help="Score an AI tool inventory and render a report.")
     score.add_argument("input", type=Path, help="Path to inventory JSON or CSV.")
     score.add_argument("--format", choices=("markdown", "json", "csv"), default="markdown", help="Report format.")
@@ -118,6 +145,38 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "run":
+            from healthai_audit.auto import run_auto
+
+            result = run_auto(
+                args.input,
+                out_dir=args.out,
+                strict_safety=not args.allow_unsafe,
+            )
+            if args.json_summary:
+                payload = {k: v for k, v in result.items() if k != "report"}
+                sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+            else:
+                pack = result.get("policy_pack") or {}
+                sys.stdout.write(
+                    "Automated HealthAI Audit complete.\n"
+                    f"  Practice: {result.get('practice')}\n"
+                    f"  Policy pack (auto): {pack.get('label', 'n/a')}\n"
+                    f"  Why: {'; '.join(pack.get('reasons') or []) or 'n/a'}\n"
+                    f"  Portfolio decision: {result.get('portfolio_decision')}\n"
+                    f"  Tools: {result.get('tool_count')}\n"
+                    f"  Output: {result.get('out_dir')}\n"
+                    f"  Start here: {result.get('paths', {}).get('run_summary')}\n"
+                )
+            return 0
+
+        if args.command == "detect-pack":
+            from healthai_audit.auto import preview_pack
+
+            info = preview_pack(args.input)
+            sys.stdout.write(json.dumps(info, indent=2) + "\n")
+            return 0
+
         if args.command == "score":
             report = run_audit(
                 args.input,
