@@ -1,0 +1,15 @@
+{
+  "practice": "Riverside Therapy Group",
+  "review_owner": "Practice Manager",
+  "review_date": "2026-07-18",
+  "practice_profile": {
+    "type": "behavioral_health",
+    "states": ["MO", "KS"],
+    "msp_managed": false
+  },
+  "tools": [
+    {"name": "Therapy Notes Scribe", "vendor": "NoteWell AI"},
+    {"name": "Patient Portal Chatbot", "vendor": "CareChat"},
+    {"name": "Clinic Policy RAG Assistant", "vendor": "Internal MSP"}
+  ]
+}

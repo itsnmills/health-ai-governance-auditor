@@ -50,6 +50,36 @@ PACK_RULES: dict[str, dict[str, str]] = {
         "decision": "block",
         "owner": "MSP / security",
     },
+    "HA-PACK-GEN-001": {
+        "title": "Patient-facing tool without escalation/refusal behavior",
+        "decision": "restrict",
+        "owner": "Practice manager",
+    },
+    "HA-PACK-GEN-002": {
+        "title": "PHI SaaS tool without security contact",
+        "decision": "approve_with_conditions",
+        "owner": "Practice manager / compliance",
+    },
+    "HA-PACK-DENTAL-003": {
+        "title": "Dental patient-facing scheduling AI without human approval",
+        "decision": "block",
+        "owner": "Office manager / MSP",
+    },
+    "HA-PACK-BH-003": {
+        "title": "Behavioral-health patient-facing tool with training-on-customer-data unknown/yes",
+        "decision": "block",
+        "owner": "Practice owner / counsel",
+    },
+    "HA-PACK-MS-002": {
+        "title": "Multi-state prescription-adjacent support without counsel review",
+        "decision": "block",
+        "owner": "Clinical owner / counsel",
+    },
+    "HA-PACK-MSP-003": {
+        "title": "MSP-managed MCP servers without allowlist evidence",
+        "decision": "restrict",
+        "owner": "MSP / security",
+    },
 }
 
 
@@ -175,12 +205,20 @@ def apply_pack_flags(
     agent_tools = [str(x).lower() for x in _as_list(source.get("agent_tools"))]
     can_disable = _bool(source.get("customer_can_disable_tools"))
     logging = str(source.get("audit_logging", "")).strip().lower()
+    training = str(source.get("customer_data_training", "")).strip().lower()
+    escalation = str(source.get("escalation_behavior", "")).strip().lower()
+    security_contact = str(source.get("security_contact", "")).strip()
+    deployment = str(source.get("deployment_model", "")).strip().lower()
+    approval = str(source.get("human_approval", "")).strip().lower()
+    mcp_servers = [str(x).lower() for x in _as_list(source.get("mcp_servers"))]
     evidence_status = assessment.get("evidence_status") or {}
     covering = int(evidence_status.get("covering_count") or 0)
+    evidence_kinds = {str(r.get("kind", "")).lower() for r in (assessment.get("evidence_refs") or []) if isinstance(r, dict)}
 
     touches_phi = any(v in {"phi", "ephi", "claims", "audio", "clinical notes"} for v in data_types)
     imaging_like = any(tok in name or tok in workflow for tok in ("imaging", "x-ray", "xray", "sensor", "pacs", "radiograph"))
     scribe_like = any(tok in name or tok in workflow for tok in ("scribe", "ambient", "dictation", "transcription"))
+    sched_like = any(tok in name or tok in workflow for tok in ("schedul", "front desk", "appointment"))
     bh_sensitive = any(tok in name or tok in workflow for tok in ("therapy", "psych", "counsel", "behavioral", "mental"))
     high_impact = any(
         tok in t
@@ -190,6 +228,12 @@ def apply_pack_flags(
 
     pack_ids = set(selection.pack_ids)
 
+    # General automated hygiene (always-on base density).
+    if patient_facing and escalation not in {"documented", "complete"}:
+        flags.append("Patient-facing tool without escalation/refusal behavior (auto general pack).")
+    if touches_phi and deployment in {"saas", "cloud", ""} and not security_contact:
+        flags.append("PHI SaaS tool without security contact (auto general pack).")
+
     if "dental_small" in pack_ids:
         if imaging_like and touches_phi and baa not in {"signed", "current", "not applicable"}:
             flags.append("Dental imaging / sensor AI without signed BAA (auto dental pack).")
@@ -197,6 +241,8 @@ def apply_pack_flags(
             flags.append(
                 "Ambient scribe in dental practice without clinician signoff / BAA evidence ref (auto dental pack)."
             )
+        if (sched_like or patient_facing) and approval in {"none", "unknown", ""}:
+            flags.append("Dental patient-facing scheduling AI without human approval (auto dental pack).")
 
     if "behavioral_health" in pack_ids:
         if (clinical or patient_facing or bh_sensitive or touches_phi) and not clinician_review:
@@ -212,6 +258,10 @@ def apply_pack_flags(
                 flags.append(
                     "Behavioral-health PHI retention over 90 days without justification evidence (auto behavioral pack)."
                 )
+        if patient_facing and training in {"yes", "true", "unknown", ""}:
+            flags.append(
+                "Behavioral-health patient-facing tool with training-on-customer-data unknown/yes (auto behavioral pack)."
+            )
 
     if "multi_state" in pack_ids:
         if (clinical or patient_facing or _bool(source.get("prescription_support"))) and state_review not in {
@@ -222,6 +272,10 @@ def apply_pack_flags(
             flags.append(
                 "Multi-state clinical/patient-facing tool without state-policy review (auto multi-state pack)."
             )
+        if _bool(source.get("prescription_support")) and state_review not in {"documented", "complete"}:
+            flags.append(
+                "Multi-state prescription-adjacent support without counsel review (auto multi-state pack)."
+            )
 
     if "msp_managed" in pack_ids:
         if agent_tools and not can_disable:
@@ -230,6 +284,8 @@ def apply_pack_flags(
             flags.append(
                 "MSP-managed high-impact tools without complete audit logging (auto MSP pack)."
             )
+        if mcp_servers and "mcp_allowlist" not in evidence_kinds:
+            flags.append("MSP-managed MCP servers without allowlist evidence (auto MSP pack).")
 
     if "specialty_clinic" in pack_ids:
         if imaging_like and touches_phi and baa not in {"signed", "current", "not applicable"}:
@@ -243,11 +299,18 @@ def pack_flag_to_rule(flag: str) -> str | None:
     mapping = [
         ("Dental imaging / sensor AI without signed BAA", "HA-PACK-DENTAL-001"),
         ("Ambient scribe in dental practice without clinician", "HA-PACK-DENTAL-002"),
+        ("Dental patient-facing scheduling AI without human approval", "HA-PACK-DENTAL-003"),
         ("Behavioral-health sensitive workflow without clinician", "HA-PACK-BH-001"),
         ("Behavioral-health PHI retention over 90 days", "HA-PACK-BH-002"),
+        ("Behavioral-health patient-facing tool with training-on-customer-data", "HA-PACK-BH-003"),
         ("Multi-state clinical/patient-facing tool without state-policy", "HA-PACK-MS-001"),
+        ("Multi-state prescription-adjacent support without counsel", "HA-PACK-MS-002"),
         ("MSP-managed agent tools without customer disable", "HA-PACK-MSP-001"),
         ("MSP-managed high-impact tools without complete audit", "HA-PACK-MSP-002"),
+        ("MSP-managed MCP servers without allowlist evidence", "HA-PACK-MSP-003"),
+        ("Patient-facing tool without escalation/refusal behavior", "HA-PACK-GEN-001"),
+        ("PHI SaaS tool without security contact", "HA-PACK-GEN-002"),
+        ("Evidence verification issues:", "HA-EVID-003"),
     ]
     for prefix, rule_id in mapping:
         if flag.startswith(prefix) or prefix in flag:

@@ -95,7 +95,7 @@ def audit_inventory(inventory: dict[str, Any]) -> dict[str, Any]:
             "review_owner": str(inventory.get("review_owner", "")),
             "review_date": str(inventory.get("review_date", "")),
             "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "method": "HealthAI Audit automated policy scoring v0.4.0",
+            "method": "HealthAI Audit automated dense scoring v0.5.0",
             "disclaimer": "Triage support only; not legal, clinical, HIPAA, FDA, or security certification advice.",
         },
         "summary": {
@@ -115,24 +115,57 @@ def run_audit(
     include_source: bool = False,
     with_decisions: bool = True,
     auto_pack: bool = True,
+    as_of: str | None = None,
+    verify_evidence: bool = False,
+    evidence_base_dir: Path | None = None,
+    inventory_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Load, safety-check, auto-pack, score, decide, and sanitize an inventory.
 
     Policy packs are selected automatically from practice profile + tool signals.
     Customers do not need to pass --pack. Fails closed on unsafe inventories.
+
+    as_of: optional YYYY-MM-DD for deterministic review/evidence/remediation dates.
+    verify_evidence: check local evidence paths (+ optional sha256) without reading text.
+    inventory_data: optional pre-loaded inventory (skips disk read; still path-based safety if path set).
     """
     from healthai_audit.decisions import attach_decisions
     from healthai_audit.packs import apply_pack_flags, describe_pack, detect_pack
+    from healthai_audit.remediation import attach_remediation_plan
     from healthai_audit.safety import assert_inventory_safe, sanitize_report
+    from healthai_audit.schema import inventory_warnings
+    from healthai_audit.verify_evidence import attach_evidence_verification
 
-    inventory = load_inventory(path)
-    assert_inventory_safe(path, inventory, strict=strict_safety)
+    if inventory_data is not None:
+        inventory = inventory_data
+        if strict_safety:
+            # Safety-check serialized form via temp-less path checks on structure only.
+            from healthai_audit.safety import check_inventory_data, SafetyError
+
+            findings = check_inventory_data(inventory)
+            if findings:
+                raise SafetyError(findings)
+    else:
+        inventory = load_inventory(path)
+        assert_inventory_safe(path, inventory, strict=strict_safety)
+
+    if as_of:
+        inventory = dict(inventory)
+        inventory["review_date"] = as_of
+
+    warnings = inventory_warnings(inventory)
     report = audit_inventory(inventory)
+    if as_of:
+        report["metadata"]["review_date"] = as_of
+        report["metadata"]["as_of"] = as_of
+        # Deterministic generated stamp when as_of provided (CI-friendly).
+        report["metadata"]["generated_at_utc"] = f"{as_of}T00:00:00+00:00"
+    report["metadata"]["method"] = "HealthAI Audit automated dense scoring v0.5.0"
+    report["warnings"] = warnings
 
     if auto_pack:
         selection = detect_pack(inventory)
         report["metadata"]["policy_pack"] = describe_pack(selection)
-        report["metadata"]["method"] = "HealthAI Audit automated policy scoring v0.4.0"
         for assessment in report["assessments"]:
             pack_flags = apply_pack_flags(assessment, selection, inventory)
             if pack_flags:
@@ -143,9 +176,34 @@ def run_audit(
                         merged.append(flag)
                 assessment["critical_flags"] = merged
 
+    if verify_evidence:
+        base = evidence_base_dir or (path.parent if path else Path.cwd())
+        attach_evidence_verification(report, base_dir=base, verify_hashes=True)
+        # Re-merge verification flags into critical flags before decisions.
+        for assessment in report["assessments"]:
+            for flag in assessment.get("critical_flags") or []:
+                pass
+
     if with_decisions:
         report = attach_decisions(report)
-    return sanitize_report(report, include_source=include_source)
+        report = attach_remediation_plan(report, inventory, as_of=as_of or str(inventory.get("review_date", "")))
+
+    sanitized = sanitize_report(report, include_source=include_source)
+    # Preserve warnings / remediation / verification through sanitize.
+    sanitized["warnings"] = report.get("warnings") or []
+    sanitized["remediation_plan"] = report.get("remediation_plan") or []
+    if report.get("action_queue"):
+        sanitized["action_queue"] = report["action_queue"]
+    if report.get("rule_catalog"):
+        sanitized["rule_catalog"] = report["rule_catalog"]
+    for src, dst in zip(report.get("assessments") or [], sanitized.get("assessments") or []):
+        if "evidence_verification" in src:
+            dst["evidence_verification"] = src["evidence_verification"]
+        if "pack_flags" in src:
+            dst["pack_flags"] = src["pack_flags"]
+        if "control_snapshot" in src:
+            dst["control_snapshot"] = src["control_snapshot"]
+    return sanitized
 
 
 def assess_tool(tool: dict[str, Any], *, review_date: str = "") -> ToolAssessment:

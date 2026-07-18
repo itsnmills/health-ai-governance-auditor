@@ -158,6 +158,18 @@ Overlays stack without user choice:
 
 Pack-specific rules (`HA-PACK-*`) inject additional critical flags before decision mapping. Operators do not pass `--pack`.
 
+## Dense automation (v0.5+)
+
+| Capability | Command / behavior |
+| --- | --- |
+| Minimal intake expansion | `healthai-audit intake` / `run --from-intake` |
+| Local evidence verify | `run` default; path exists + optional sha256 (binary only) |
+| Remediation SLAs | auto due dates: block 14d, restrict 30d, conditional 45d |
+| HTML dashboard | `dashboard.html` in every `run` output |
+| Batch | `healthai-audit batch inventories/ --out out/` |
+| Deterministic clock | `--as-of YYYY-MM-DD` |
+| Schema warnings | unknown keys / missing high-impact fields → `warnings.txt` |
+
 ## Safety model (v0.2+)
 
 Inventories are **fail-closed**:

@@ -50,8 +50,25 @@ def main() -> int:
             sys.executable, "-m", "healthai_audit", "run",
             "samples/sample_dental_msp.json",
             "--out", str(out / "auto-run"),
+            "--as-of", "2026-07-18",
             "--json-summary",
         ])
+        run([
+            sys.executable, "-m", "healthai_audit", "run",
+            "samples/sample_intake_minimal.json",
+            "--from-intake",
+            "--out", str(out / "from-intake"),
+            "--as-of", "2026-07-18",
+            "--json-summary",
+        ])
+        run([
+            sys.executable, "-m", "healthai_audit", "batch",
+            "samples",
+            "--out", str(out / "batch"),
+            "--as-of", "2026-07-18",
+            "--no-verify-evidence",
+        ])
+
         report = json.loads((out / "report.json").read_text(encoding="utf-8"))
         assert report["summary"]["tool_count"] == 4
         assert report["summary"]["risk_counts"]["Critical"] >= 1
@@ -59,7 +76,7 @@ def main() -> int:
         assert "source" not in report["assessments"][0]
         assert report["assessments"][0].get("decision")
         assert "evidence_status" in report["assessments"][0]
-        assert "v0.4.0" in report["metadata"]["method"]
+        assert "v0.5.0" in report["metadata"]["method"]
         assert report["metadata"].get("policy_pack", {}).get("auto") is True
         assert "HealthAI Audit Report" in (out / "report.md").read_text(encoding="utf-8")
         assert "decision" in (out / "report.csv").read_text(encoding="utf-8")
@@ -68,11 +85,18 @@ def main() -> int:
         assert (out / "packet" / "kit-bridge" / "ai-workflow-review.md").is_file()
         assert (out / "kit" / "handoff-actions.csv").is_file()
         assert (out / "auto-run" / "RUN_SUMMARY.md").is_file()
+        assert (out / "auto-run" / "dashboard.html").is_file()
+        assert (out / "auto-run" / "remediation-plan.md").is_file()
         assert (out / "auto-run" / "kit-bridge" / "ai-workflow-review.md").is_file()
         auto_report = json.loads((out / "auto-run" / "report.json").read_text(encoding="utf-8"))
         assert "dental" in str(auto_report["metadata"]["policy_pack"]["label"])
         assert "multi_state" in auto_report["metadata"]["policy_pack"]["overlays"]
         assert "msp_managed" in auto_report["metadata"]["policy_pack"]["overlays"]
+        assert auto_report["metadata"].get("as_of") == "2026-07-18"
+        assert auto_report.get("remediation_plan")
+        intake_report = json.loads((out / "from-intake" / "report.json").read_text(encoding="utf-8"))
+        assert "behavioral" in str(intake_report["metadata"]["policy_pack"]["label"])
+        assert (out / "batch" / "BATCH_INDEX.json").is_file()
         diff = json.loads((out / "diff.json").read_text(encoding="utf-8"))
         assert diff["summary"]["rules_closed"] >= 1
     print("HealthAI Audit verification passed.")

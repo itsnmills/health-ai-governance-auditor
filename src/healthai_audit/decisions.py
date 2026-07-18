@@ -88,6 +88,11 @@ RULES: dict[str, dict[str, str]] = {
         "decision": "approve_with_conditions",
         "owner": "Practice manager / compliance",
     },
+    "HA-EVID-003": {
+        "title": "Local evidence path missing or hash mismatch",
+        "decision": "approve_with_conditions",
+        "owner": "Practice manager / compliance",
+    },
 }
 RULES.update(PACK_RULES)
 
@@ -247,10 +252,7 @@ def attach_decisions(report: dict[str, Any]) -> dict[str, Any]:
     summary["portfolio_decision"] = _portfolio_decision(decision_counts)
 
     metadata = dict(report.get("metadata", {}))
-    if "policy_pack" not in metadata:
-        metadata["method"] = "HealthAI Audit deterministic scoring v0.4.0"
-    else:
-        metadata["method"] = "HealthAI Audit automated policy scoring v0.4.0"
+    metadata["method"] = "HealthAI Audit automated dense scoring v0.5.0"
 
     evidence_sufficient = sum(
         1 for item in assessments_out if (item.get("evidence_status") or {}).get("status") == "sufficient"
